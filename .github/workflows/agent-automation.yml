@@ -15,11 +15,11 @@ jobs:
       github.event_name == 'issues'
       && github.event.label.name == 'agent/dsh'
       && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@30545c5313d8181bd6f9bf214431edbbc24a8031
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@9b2708336efc08d23afaf2c71086c0b7dee4e3ac
     with:
       repository: ${{ github.repository }}
       issue_number: ${{ github.event.issue.number }}
-      controller_sha: 30545c5313d8181bd6f9bf214431edbbc24a8031
+      controller_sha: 9b2708336efc08d23afaf2c71086c0b7dee4e3ac
 
   codex-review:
     if: >-
@@ -27,13 +27,13 @@ jobs:
       && github.event.pull_request.draft == false
       && github.event.pull_request.head.repo.full_name == github.repository
       && (github.event.action != 'labeled' || github.event.label.name == 'automation/review-ready')
-    uses: Ornn8/dsh-agent-automation/.github/workflows/codex-review.yml@30545c5313d8181bd6f9bf214431edbbc24a8031
+    uses: Ornn8/dsh-agent-automation/.github/workflows/codex-review.yml@9b2708336efc08d23afaf2c71086c0b7dee4e3ac
     with:
       repository: ${{ github.repository }}
       pull_request_number: ${{ github.event.pull_request.number }}
       base_sha: ${{ github.event.pull_request.base.sha }}
       head_sha: ${{ github.event.pull_request.head.sha }}
-      controller_sha: 30545c5313d8181bd6f9bf214431edbbc24a8031
+      controller_sha: 9b2708336efc08d23afaf2c71086c0b7dee4e3ac
 
   dsh-repair:
     if: >-
@@ -42,9 +42,9 @@ jobs:
       && github.event.label.name == 'automation/review-blocked'
       && github.event.pull_request.draft == false
       && github.event.pull_request.head.repo.full_name == github.repository
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@30545c5313d8181bd6f9bf214431edbbc24a8031
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@9b2708336efc08d23afaf2c71086c0b7dee4e3ac
     with:
       repository: ${{ github.repository }}
       pull_request_number: ${{ github.event.pull_request.number }}
       head_sha: ${{ github.event.pull_request.head.sha }}
-      controller_sha: 30545c5313d8181bd6f9bf214431edbbc24a8031
+      controller_sha: 9b2708336efc08d23afaf2c71086c0b7dee4e3ac
