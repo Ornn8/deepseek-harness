@@ -36,7 +36,9 @@ concurrency:
 jobs:
   lifecycle:
     name: Issue lifecycle
-    if: ${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}
+    # Fork-safe: the Project-mutating lifecycle needs the repository GitHub App,
+    # so stay inert when its credentials are absent (a fork configures neither).
+    if: ${{ (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) && vars.DSH_ISSUE_APP_CLIENT_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out trusted policy
@@ -50,8 +52,12 @@ jobs:
         with:
           client-id: ${{ vars.DSH_ISSUE_APP_CLIENT_ID }}
           private-key: ${{ secrets.DSH_ISSUE_APP_PRIVATE_KEY }}
-          owner: deepseek-harness
-          repositories: deepseek-harness
+          # Derive the installation from the running repository instead of
+          # hardcoding upstream, so an App-installed fork addresses its own
+          # installation; the job-level guard above keeps credential-less
+          # repositories (including this fork) inert.
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
       - name: Handle repository event
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}

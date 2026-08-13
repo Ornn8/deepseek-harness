@@ -180,6 +180,13 @@ jobs:
             pkg-fetch-${{ matrix.target }}-
 
       - name: Install (immutable)
+        env:
+          # node-pty's binding.gyp resolves node-addon-api with `require()`,
+          # which follows pnpm's symlink into the sibling `.pnpm` store. gyp
+          # then writes the node_addon_api* sub-makefiles at a broken relative
+          # path and the manylinux rebuild below cannot find them. Preserve the
+          # symlink during install so gyp emits them under node-pty instead.
+          NODE_OPTIONS: --preserve-symlinks
         run: pnpm install --frozen-lockfile
 
       - name: Rebuild Linux node-pty against manylinux 2.28
