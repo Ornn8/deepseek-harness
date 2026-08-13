@@ -4,7 +4,7 @@ on:
   issues:
     types: [labeled]
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review, labeled]
 
 permissions:
   contents: read
@@ -25,9 +25,23 @@ jobs:
       github.event_name == 'pull_request'
       && github.event.pull_request.draft == false
       && github.event.pull_request.head.repo.full_name == github.repository
+      && (github.event.action != 'labeled' || github.event.label.name == 'automation/review-ready')
     uses: Ornn8/dsh-agent-automation/.github/workflows/codex-review.yml@master
     with:
       repository: ${{ github.repository }}
       pull_request_number: ${{ github.event.pull_request.number }}
       base_sha: ${{ github.event.pull_request.base.sha }}
+      head_sha: ${{ github.event.pull_request.head.sha }}
+
+  dsh-repair:
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action == 'labeled'
+      && github.event.label.name == 'automation/review-blocked'
+      && github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@master
+    with:
+      repository: ${{ github.repository }}
+      pull_request_number: ${{ github.event.pull_request.number }}
       head_sha: ${{ github.event.pull_request.head.sha }}
