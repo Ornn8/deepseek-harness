@@ -195,6 +195,13 @@ jobs:
           esac
           addon_dir="$(realpath packages/subprocess/subprocess-local/node_modules/node-pty)"
           addon="$addon_dir/build/Release/pty.node"
+          # node-gyp writes the node-addon-api target files included by the
+          # generated Makefile outside the package directory, so pnpm's
+          # side-effects cache restores build/ without them; a cached install
+          # then leaves a Makefile whose includes resolve nowhere. Regenerate
+          # the build state so the container rebuild starts from a consistent
+          # layout.
+          pnpm rebuild node-pty
           [ -f "$addon_dir/build/Makefile" ] || {
             echo "::error::node-pty install did not generate $addon_dir/build/Makefile"
             exit 1
