@@ -291,15 +291,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          readelf --version-info "${{ steps.runtime.outputs.exe }}" > glibc-versions.txt
-          readelf --version-info "${{ steps.runtime.outputs.exe }}-pty.node" >> glibc-versions.txt
-          cat glibc-versions.txt
-          maximum="$(sed -n 's/.*Name: GLIBC_\([0-9.]*\).*/\1/p' glibc-versions.txt | sort -V | tail -1)"
-          [ -n "$maximum" ] || { echo "::error::No GLIBC requirements found"; exit 1; }
-          dpkg --compare-versions "$maximum" le 2.28 || {
-            echo "::error::Executable requires GLIBC_$maximum but wheel claims manylinux_2_28"
-            exit 1
-          }
+          for artifact in "${{ steps.runtime.outputs.exe }}" "${{ steps.runtime.outputs.exe }}-pty.node"; do
+            versions="glibc-$(basename "$artifact").txt"
+            readelf --version-info "$artifact" | tee "$versions"
+            maximum="$(sed -n 's/.*Name: GLIBC_\([0-9.]*\).*/\1/p' "$versions" | sort -V | tail -1)"
+            [ -n "$maximum" ] || { echo "::error::No GLIBC requirements found in $artifact"; exit 1; }
+            dpkg --compare-versions "$maximum" le 2.28 || {
+              echo "::error::$artifact requires GLIBC_$maximum but wheel claims manylinux_2_28"
+              exit 1
+            }
+          done
 
       - name: Check macOS deployment target
         if: runner.os == 'macOS'

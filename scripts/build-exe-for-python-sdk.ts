@@ -10,10 +10,12 @@
 import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { chmod, copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 
 const root = resolve(import.meta.dirname, '..')
+const resolveDependency = createRequire(import.meta.url).resolve
 
 /** The closure manifest whose dependencies define the executable. */
 const DEPLOY_ROOT_PACKAGE = 'dsh-jsonrpc-agent-pkg'
@@ -438,7 +440,10 @@ class SingleExeBuild {
       }
       return prebuild
     }
-    const source = join(root, 'packages', 'subprocess', 'subprocess-local', 'node_modules', 'node-pty', 'build', 'Release', 'pty.node')
+    const nodePtyPackage = resolveDependency('node-pty/package.json', {
+      paths: [join(root, 'packages', 'subprocess', 'subprocess-local')],
+    })
+    const source = join(dirname(nodePtyPackage), 'build', 'Release', 'pty.node')
     const destination = join(stagedBuild, 'Release', 'pty.node')
     if (this.cli.dryRun) {
       console.log(`build-exe-for-python-sdk: [dry-run] cp ${source} ${destination}`)

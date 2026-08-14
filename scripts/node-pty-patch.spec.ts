@@ -14,5 +14,7 @@ describe('node-pty package patch', () => {
     expect(patch).toContain('module: require(companion)')
     expect(builder).toContain('const ptyCompanion = `${product}-pty.node`')
     expect(builder).toContain('await copyFile(nativePty, ptyCompanion)')
+    expect(builder).toContain("resolveDependency('node-pty/package.json'")
+    expect(builder).not.toContain("'subprocess-local', 'node_modules', 'node-pty', 'build'")
   })
 })

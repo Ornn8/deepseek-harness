@@ -325,6 +325,7 @@ describe('Python release workflows', () => {
 
     const buildSteps: unknown[] = build.steps
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
+    const glibcCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check Linux GLIBC requirements')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
     if (!isRecord(manylinuxAddon) || typeof manylinuxAddon.run !== 'string') {
@@ -367,6 +368,9 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(manylinuxSmoke)).toContain('$runtime-pty.node')
     expect(JSON.stringify(manylinuxSmoke)).toContain('ldd \\"$runtime-pty.node\\"')
     expect(JSON.stringify(manylinuxSmoke)).not.toContain('PKG_NATIVE_CACHE_PATH')
+    expect(JSON.stringify(glibcCheck)).toContain('for artifact in')
+    expect(JSON.stringify(glibcCheck)).toContain('-pty.node')
+    expect(JSON.stringify(glibcCheck)).toContain('$artifact requires GLIBC_')
   })
 
   it('uses the shared macOS deployment-target check in GitLab', () => {
@@ -379,12 +383,16 @@ describe('Python release workflows', () => {
     const macosCheck = runtimeScript.find(
       step => typeof step === 'string' && step.includes('PLATFORM" = macos-arm64'),
     )
+    const linuxCheck = runtimeScript.find(
+      step => typeof step === 'string' && step.includes('readelf --version-info'),
+    )
     if (typeof macosCheck !== 'string') {
       throw new TypeError('GitLab CI must check the macOS deployment target')
     }
 
     expect(macosCheck).toContain('scripts/check-macos-deployment-target.py')
     expect(macosCheck).toContain('"$EXE" "$EXE-pty.node" "$EXE-spawn-helper"')
+    expect(linuxCheck).toContain('for artifact in "$EXE" "$EXE-pty.node"')
   })
 })
 
