@@ -19,7 +19,7 @@ jobs:
       && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
       && (startsWith(github.event.comment.body, '@dsh ')
         || startsWith(github.event.comment.body, 'DSH: '))
-    uses: Ornn8/dsh-agent-automation/.github/workflows/wake-rework.yml@624a3f3739dcfa371d3e25054768ac242cddf699
+    uses: Ornn8/dsh-agent-automation/.github/workflows/wake-rework.yml@ff693bcca5b232673ed9aa1e05844b8559494042
     with:
       pull_request_number: ${{ github.event.issue.number }}
       comment_id: ${{ github.event.comment.id }}
@@ -34,7 +34,7 @@ jobs:
           && github.event.client_payload.kind == 'review-repair'
           && github.event.client_payload.repository == github.repository
           && github.event.client_payload.subject.type == 'pull-request'))
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@624a3f3739dcfa371d3e25054768ac242cddf699
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@ff693bcca5b232673ed9aa1e05844b8559494042
     with:
       pull_request_number: ${{ github.event.action == 'agent_work_requested' && github.event.client_payload.subject.number || github.event.client_payload.pr_number }}
       head_sha: ${{ github.event.action == 'agent_work_requested' && github.event.client_payload.revision.head || github.event.client_payload.head_sha }}
