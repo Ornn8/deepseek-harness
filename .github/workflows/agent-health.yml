@@ -9,12 +9,12 @@ permissions:
 jobs:
   review-worker:
     name: review worker
-    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@22985b23bcbe858e19e6df0c454130367350e0e2
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@a618c6fd180d763ed814e223b0a18c425211a45a
     with:
       role: review
 
   change-worker:
     name: change worker
-    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@22985b23bcbe858e19e6df0c454130367350e0e2
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@a618c6fd180d763ed814e223b0a18c425211a45a
     with:
       role: change
