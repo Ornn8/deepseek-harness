@@ -321,7 +321,15 @@ jobs:
           docker run --rm -e VERSION -e DSH_TELEMETRY_DISABLED -v "$PWD:/work" -w /work "$image" bash -euxo pipefail -c '
             /opt/python/cp310-cp310/bin/python -m venv /tmp/dsh-sdk
             /tmp/dsh-sdk/bin/python -m pip install --find-links /work/dist-python deepseek-harness-sdk=="$VERSION"
+            rm -rf /tmp/dsh-pkg-native
+            export PKG_NATIVE_CACHE_PATH=/tmp/dsh-pkg-native
             /tmp/dsh-sdk/bin/python /work/scripts/smoke-python-runtime.py --scenario sdk-default
+            shopt -s nullglob
+            addons=(/tmp/dsh-pkg-native/pkg/*/node-pty/build/Release/pty.node)
+            [ "${#addons[@]}" -eq 1 ] || {
+              echo "::error::Expected one extracted node-pty addon; found ${#addons[@]}"
+              exit 1
+            }
           '
 
       - uses: actions/upload-artifact@v7

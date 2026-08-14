@@ -40,6 +40,7 @@ const DEPLOY_ONLY_DOCS = ['README.md', 'README.zh.md', 'README.i18n.yaml']
  */
 const ASSET_GLOBS = [
   'package.json',
+  'node_modules/node-pty/build/Release/pty.node',
   'node_modules/**/*.js',
   'node_modules/**/*.cjs',
   'node_modules/**/*.mjs',

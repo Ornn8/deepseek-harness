@@ -362,6 +362,9 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(macosCheck)).toContain('$EXE-spawn-helper')
     expect(manylinuxSmoke).toMatchObject({ if: "runner.os == 'Linux'" })
     expect(JSON.stringify(manylinuxSmoke)).toContain('-e DSH_TELEMETRY_DISABLED')
+    expect(JSON.stringify(manylinuxSmoke)).toContain('PKG_NATIVE_CACHE_PATH=/tmp/dsh-pkg-native')
+    expect(JSON.stringify(manylinuxSmoke)).toContain('node-pty/build/Release/pty.node')
+    expect(JSON.stringify(manylinuxSmoke)).toContain('Expected one extracted node-pty addon')
   })
 
   it('uses the shared macOS deployment-target check in GitLab', () => {
