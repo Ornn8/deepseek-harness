@@ -389,7 +389,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = '4f0a0e879541f267382b4dc1f6aa6332d033a9b2'
+  const controllerSha = 'cb3279931de19794c802eca48496597f0464769e'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
@@ -448,8 +448,10 @@ describe('Agent automation workflows', () => {
     expect(workflowEvent(review, 'pull_request_target')).toEqual({
       types: ['opened', 'reopened', 'synchronize', 'ready_for_review', 'labeled', 'edited'],
     })
-    expect(review.on).not.toHaveProperty('repository_dispatch')
-    expect(workflowJob(review, 'codex-review').if).not.toContain('repository_dispatch')
+    expect(workflowEvent(review, 'repository_dispatch')).toEqual({ types: ['codex-review'] })
+    expect(workflowJob(review, 'codex-review').if).toContain('repository_dispatch')
+    expect(workflowEvent(issues, 'repository_dispatch')).toEqual({ types: ['dsh-issue'] })
+    expect(workflowJob(issues, 'dsh-issue').if).toContain('repository_dispatch')
     expect(workflowEvent(rework, 'repository_dispatch')).toEqual({
       types: ['dsh-repair', 'agent_work_requested'],
     })
