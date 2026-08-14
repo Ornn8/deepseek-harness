@@ -10,7 +10,7 @@ on:
   pull_request_review_comment:
     types: [created]
   repository_dispatch:
-    types: [dsh-repair]
+    types: [dsh-repair, agent_work_requested]
 
 permissions:
   contents: read
@@ -23,12 +23,14 @@ jobs:
       && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
       && (startsWith(github.event.comment.body, '@dsh ')
         || startsWith(github.event.comment.body, 'DSH: '))
-    uses: Ornn8/dsh-agent-automation/.github/workflows/wake-rework.yml@21314cce10e0c3e36a710647bc129186d0899e04
+    uses: Ornn8/dsh-agent-automation/.github/workflows/wake-rework.yml@9d7a82e8ddd90f0260097112241e9273d0a7a18c
     with:
       repository: ${{ github.repository }}
       pull_request_number: ${{ github.event.issue.number }}
       comment_id: ${{ github.event.comment.id }}
-      controller_sha: 21314cce10e0c3e36a710647bc129186d0899e04
+      controller_sha: 9d7a82e8ddd90f0260097112241e9273d0a7a18c
+      worker_id: dsh
+      runner_labels_json: '["self-hosted","Windows","X64","agent-change"]'
 
   dsh-review-feedback:
     if: >-
@@ -41,26 +43,37 @@ jobs:
         && github.event.pull_request.draft == false
         && github.event.pull_request.head.repo.full_name == github.repository
         && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
-    uses: Ornn8/dsh-agent-automation/.github/workflows/wake-feedback.yml@21314cce10e0c3e36a710647bc129186d0899e04
+    uses: Ornn8/dsh-agent-automation/.github/workflows/wake-feedback.yml@9d7a82e8ddd90f0260097112241e9273d0a7a18c
     with:
       repository: ${{ github.repository }}
       pull_request_number: ${{ github.event.pull_request.number }}
       feedback_kind: ${{ github.event_name == 'pull_request_review' && 'review' || 'review-comment' }}
       feedback_id: ${{ github.event_name == 'pull_request_review' && github.event.review.id || github.event.comment.id }}
-      controller_sha: 21314cce10e0c3e36a710647bc129186d0899e04
+      controller_sha: 9d7a82e8ddd90f0260097112241e9273d0a7a18c
+      worker_id: dsh
+      runner_labels_json: '["self-hosted","Windows","X64","agent-change"]'
 
   dsh-repair:
     if: >-
-      github.event_name == 'repository_dispatch'
+      (github.event_name == 'repository_dispatch'
+        && (github.event.action == 'dsh-repair'
+          || (github.event.action == 'agent_work_requested'
+            && github.event.client_payload.version == 1
+            && github.event.client_payload.role == 'change'
+            && github.event.client_payload.kind == 'review-repair'
+            && github.event.client_payload.repository == github.repository
+            && github.event.client_payload.subject.type == 'pull-request')))
       || (github.event_name == 'pull_request'
         && github.event.action == 'labeled'
         && contains(fromJSON('["automation/review-blocked","automation/ci-failed"]'), github.event.label.name)
         && github.event.pull_request.draft == false
         && github.event.pull_request.head.repo.full_name == github.repository)
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@21314cce10e0c3e36a710647bc129186d0899e04
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@9d7a82e8ddd90f0260097112241e9273d0a7a18c
     with:
       repository: ${{ github.repository }}
-      pull_request_number: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_number || github.event.pull_request.number }}
-      head_sha: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.head_sha || github.event.pull_request.head.sha }}
-      request_id: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.request_id || github.event.label.name == 'automation/ci-failed' && format('ci-head-{0}', github.event.pull_request.head.sha) || format('codex-{0}-{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) }}
-      controller_sha: 21314cce10e0c3e36a710647bc129186d0899e04
+      pull_request_number: ${{ github.event_name == 'repository_dispatch' && github.event.action == 'agent_work_requested' && github.event.client_payload.subject.number || github.event_name == 'repository_dispatch' && github.event.client_payload.pr_number || github.event.pull_request.number }}
+      head_sha: ${{ github.event_name == 'repository_dispatch' && github.event.action == 'agent_work_requested' && github.event.client_payload.revision.head || github.event_name == 'repository_dispatch' && github.event.client_payload.head_sha || github.event.pull_request.head.sha }}
+      request_id: ${{ github.event_name == 'repository_dispatch' && github.event.action == 'agent_work_requested' && github.event.client_payload.requestId || github.event_name == 'repository_dispatch' && github.event.client_payload.request_id || github.event.label.name == 'automation/ci-failed' && format('ci-head-{0}', github.event.pull_request.head.sha) || format('codex-{0}-{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) }}
+      controller_sha: 9d7a82e8ddd90f0260097112241e9273d0a7a18c
+      worker_id: dsh
+      runner_labels_json: '["self-hosted","Windows","X64","agent-change"]'

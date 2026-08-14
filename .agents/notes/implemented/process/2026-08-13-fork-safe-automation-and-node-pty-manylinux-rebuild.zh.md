@@ -25,11 +25,13 @@ Status: implemented
 
 目标仓库用相互独立的薄工作流替换组合调用器，分别负责 Issue 分发、精确版本对 PR 审核、可信返工反馈、显式落地和按需健康检查。每个可复用工作流及其控制器 checkout 都使用专用 `Ornn8/dsh-agent-automation` 仓库中的同一个完整 commit SHA，因此控制器升级会成为目标仓库内一次可审核的改动。
 
-Codex 获得精确 base/head checkout，不获得 GitHub 凭据，并只做只读检查。作业级 Actions token 发布 pending 或最终 `codex/review` 状态、英文审核评论和投影标签。DSH 保留负责分支写入的主机 GitHub 身份。BLOCK 结论记录精确版本对，发出幂等 `dsh-repair` repository dispatch，并添加 `automation/review-blocked`；在 dispatch 接收器尚未进入默认分支时，PR 标签事件充当引导传输，但返工控制器在启动可见 DSH 会话前仍会校验实时 head 和审核标记。已完成且失败的 `CI` workflow run 会创建一个由 run id 和 attempt 标识的独立请求；只有工作流名为 `CI`、结论为失败、PR 编号匹配且 head 正是当前值时，控制器才允许 DSH 检查日志或修改分支。
+自动化仓库公开一套统一的 Agent Worker 调用与终态回执接口。运行时专用 Adapter 负责启动和观察 DSH Web、ChatGPT Desktop 或使用 JSON 协议的命令；目标工作流把 `review` 与 `change` 角色映射到已配置的 worker id。两个角色分别使用 `agent-reviewer` 与 `agent-change` runner 注册、进程、工作目录、并发组和健康检查作业。
+
+审核 worker 获得精确 base/head checkout，不获得 Actions 凭据，并只做只读检查。作业级 Actions token 发布 pending 或最终 `codex/review` 兼容状态、英文审核评论和投影标签。BLOCK 结论记录精确版本对；控制器通过共享的主机 GitHub 身份发布一个不可变、幂等、面向 `change` 角色的 `agent_work_requested` WorkRequest 后，审核任务即终止。接收工作流独立启动，校验 WorkRequest 字段、实时 head、审核标记和标签，再调用其配置的变更 worker。已完成且失败的 `CI` workflow run 会创建一个由 run id 和 attempt 标识的独立请求；只有工作流名为 `CI`、结论为失败、PR 编号匹配且 head 正是当前值时，控制器才允许变更 worker 检查日志或修改分支。
 
 PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制器只接受当前指向 `master` 的非草稿 PR，要求精确 base/head PASS 记录和所有实时分支保护上下文均成功，在 squash merge 前立即重复这些检查，否则不改变 PR 即退出。成功的 `CI` workflow run 会在待定检查完成后重试落地。
 
-每次向 `master` 推送后，协调器只为当前 base/head 对既没有已完成审核、也没有待处理审核的同仓库开放 PR 分发审核；草稿、落后以及已有覆盖的 PR 会被跳过。手动健康工作流检查固定控制器、DSH Web 主机、Codex 二进制和 GitHub 访问，全程不调用任一模型。
+每次向 `master` 推送后，协调器只为当前 base/head 对既没有已完成审核、也没有待处理审核的同仓库开放 PR 分发审核；草稿、落后以及已有覆盖的 PR 会被跳过。手动健康工作流在各自 runner 上分别检查每个已配置 worker，并检查固定控制器与 GitHub 访问，全程不调用模型。
 
 ## Alternatives considered
 
@@ -55,4 +57,4 @@ PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制�
 
 目标仓库现在包含更多工作流入口文件，但其逻辑仍位于专用自动化仓库，固定 revision 也让已部署控制器可审计。标签继续作为操作者可见的投影和恢复触发器，而不是批准证据；评论包含精确版本对和可见的 DSH 或 Codex 任务标识，足以监管一次运行。CI 失败返工完全由事件驱动，检查为绿色时不会产生任何模型活动。
 
-Actions 发布者把 Codex 的发布身份与 DSH 和落地使用的主机身份分开，但自托管 runner 以及后两项操作仍共用一个持久主机 GitHub 登录。完整进程隔离和独立 GitHub App 仍属于后续安全加固；本次改动不声称已经实现这种隔离。
+停止一个角色 runner 不会影响另一个角色继续工作；属于已停止角色的作业会留在 GitHub 队列中。两个注册当前仍共享同一台 Windows 主机、网络连接、适用时的 DSH Web 服务，以及供控制器传输与变更发布使用的持久主机 GitHub 登录。把一个角色迁移到另一台机器只需调整 runner 标签和机器本地 worker 配置；完整的主机与 GitHub App 隔离仍属于独立的安全加固工作。

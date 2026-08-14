@@ -391,7 +391,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = '21314cce10e0c3e36a710647bc129186d0899e04'
+  const controllerSha = '9d7a82e8ddd90f0260097112241e9273d0a7a18c'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
@@ -428,15 +428,30 @@ describe('Agent automation workflows', () => {
       statuses: 'write',
     })
     expect(workflowEvent(review, 'repository_dispatch')).toEqual({ types: ['dsh-review'] })
-    expect(workflowEvent(rework, 'repository_dispatch')).toEqual({ types: ['dsh-repair'] })
+    expect(workflowEvent(rework, 'repository_dispatch')).toEqual({
+      types: ['dsh-repair', 'agent_work_requested'],
+    })
     expect(workflowEvent(rework, 'pull_request')).toEqual({ types: ['labeled'] })
-    expect(workflowJob(rework, 'dsh-repair').if).toContain('["automation/review-blocked","automation/ci-failed"]')
+    const repair = workflowJob(rework, 'dsh-repair')
+    expect(repair.if).toContain('agent_work_requested')
+    expect(repair.if).toContain("github.event.client_payload.role == 'change'")
+    expect(repair.if).toContain('["automation/review-blocked","automation/ci-failed"]')
+    expect(repair.with).toMatchObject({
+      worker_id: 'dsh',
+      runner_labels_json: '["self-hosted","Windows","X64","agent-change"]',
+    })
+    expect(workflowJob(review, 'codex-review').with).toMatchObject({
+      worker_id: 'codex',
+      runner_labels_json: '["self-hosted","Windows","X64","agent-reviewer"]',
+    })
     expect(workflowEvent(ciRepair, 'workflow_run')).toEqual({ workflows: ['CI'], types: ['completed'] })
     expect(workflowJob(ciRepair, 'dsh-ci-repair').if).toContain("github.event.workflow_run.conclusion == 'failure'")
     expect(workflowEvent(landing, 'repository_dispatch')).toEqual({ types: ['dsh-land'] })
     expect(workflowEvent(landing, 'workflow_run')).toEqual({ workflows: ['CI'], types: ['completed'] })
     expect(health.on).toEqual({ workflow_dispatch: null })
     expect(health.permissions).toEqual({ contents: 'read' })
+    expect(workflowJob(health, 'review-worker').with).toMatchObject({ worker_id: 'codex' })
+    expect(workflowJob(health, 'change-worker').with).toMatchObject({ worker_id: 'dsh' })
   })
 })
 

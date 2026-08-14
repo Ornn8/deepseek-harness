@@ -7,8 +7,20 @@ permissions:
   contents: read
 
 jobs:
-  health:
-    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@21314cce10e0c3e36a710647bc129186d0899e04
+  review-worker:
+    name: review worker
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@9d7a82e8ddd90f0260097112241e9273d0a7a18c
     with:
       repository: ${{ github.repository }}
-      controller_sha: 21314cce10e0c3e36a710647bc129186d0899e04
+      controller_sha: 9d7a82e8ddd90f0260097112241e9273d0a7a18c
+      worker_id: codex
+      runner_labels_json: '["self-hosted","Windows","X64","agent-reviewer"]'
+
+  change-worker:
+    name: change worker
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@9d7a82e8ddd90f0260097112241e9273d0a7a18c
+    with:
+      repository: ${{ github.repository }}
+      controller_sha: 9d7a82e8ddd90f0260097112241e9273d0a7a18c
+      worker_id: dsh
+      runner_labels_json: '["self-hosted","Windows","X64","agent-change"]'
