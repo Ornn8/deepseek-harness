@@ -386,6 +386,12 @@ class SingleExeBuild {
     const product = join(this.outDir, `${OUTPUT_BASENAME}-${target.platform}-${target.arch}`)
     const nativePty = await this.prepareNativePty(target)
     if (!this.cli.dryRun) await mkdir(this.outDir, { recursive: true })
+    const ptyCompanion = `${product}-pty.node`
+    if (this.cli.dryRun) {
+      console.log(`build-exe-for-python-sdk: [dry-run] cp ${nativePty} ${ptyCompanion}`)
+    } else {
+      await copyFile(nativePty, ptyCompanion)
+    }
     await this.run(`pkg ${target.spec}`, pnpmBin(), [
       'dlx',
       PKG_SPEC,
@@ -398,12 +404,6 @@ class SingleExeBuild {
     ])
     if (!this.cli.dryRun && !existsSync(product)) {
       throw new Error(`build-exe-for-python-sdk: product ${product} is missing after the pkg run; inspect ${this.outDir}.`)
-    }
-    const ptyCompanion = `${product}-pty.node`
-    if (this.cli.dryRun) {
-      console.log(`build-exe-for-python-sdk: [dry-run] cp ${nativePty} ${ptyCompanion}`)
-    } else {
-      await copyFile(nativePty, ptyCompanion)
     }
     if (target.platform !== 'macos') return [product, ptyCompanion]
     const spawnHelper = `${product}-spawn-helper`

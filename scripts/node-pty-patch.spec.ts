@@ -16,5 +16,8 @@ describe('node-pty package patch', () => {
     expect(builder).toContain('await copyFile(nativePty, ptyCompanion)')
     expect(builder).toContain("resolveDependency('node-pty/package.json'")
     expect(builder).not.toContain("'subprocess-local', 'node_modules', 'node-pty', 'build'")
+    expect(builder.indexOf('await copyFile(nativePty, ptyCompanion)')).toBeLessThan(
+      builder.indexOf('await this.run(`pkg ${target.spec}`'),
+    )
   })
 })
