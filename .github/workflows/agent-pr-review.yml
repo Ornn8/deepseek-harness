@@ -23,7 +23,7 @@ jobs:
         && github.event.pull_request.head.repo.full_name == github.repository
         && (github.event.action != 'labeled' || github.event.label.name == 'automation/review-ready')
         && (github.event.action != 'edited' || github.event.changes.base.ref.from != null))
-    uses: Ornn8/dsh-agent-automation/.github/workflows/codex-review.yml@ff693bcca5b232673ed9aa1e05844b8559494042
+    uses: Ornn8/dsh-agent-automation/.github/workflows/codex-review.yml@66ba6f32596ce6a63582cc564765b7b3007fa0a5
     with:
       pull_request_number: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pull_request_number || github.event.pull_request.number }}
       base_sha: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.base_sha || github.event.pull_request.base.sha }}
