@@ -16,7 +16,7 @@ jobs:
       github.event.workflow_run.name == vars.DSH_AUTOMATION_CI_WORKFLOW
       && github.event.workflow_run.conclusion == 'failure'
       && github.event.workflow_run.pull_requests[0].number != null
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@cb3279931de19794c802eca48496597f0464769e
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@a197c461aaabaf9d782fb0dced43b01d0e12963a
     with:
       pull_request_number: ${{ github.event.workflow_run.pull_requests[0].number }}
       head_sha: ${{ github.event.workflow_run.head_sha }}
