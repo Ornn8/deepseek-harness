@@ -1,17 +1,16 @@
-# Agent Note: Fork-safe automation workflows and node-pty manylinux rebuild
+# Agent Note: Fork-safe agent automation
 
 Status: implemented
 
-English | [中文](2026-08-13-fork-safe-automation-and-node-pty-manylinux-rebuild.zh.md)
+English | [中文](2026-08-13-fork-safe-agent-automation.zh.md)
 
 ## Problem
 
-`Ornn8/deepseek-harness` forks the upstream repository to run its GitHub-agent automation pipeline, but four failure modes prevent that fork from operating autonomously.
+`Ornn8/deepseek-harness` forks the upstream repository to run its GitHub-agent automation pipeline, but three failure modes prevent that fork from operating autonomously.
 
 1. The Issue policy check reads `config.json`, whose `organization` and `repository` are both `deepseek-harness`, so `policy.mjs pr` queries `/repos/deepseek-harness/deepseek-harness/...`. A fork PR therefore receives a 404 from the `requested_reviewers` endpoint and the job fails.
 2. The Issue lifecycle check hardcodes `owner: deepseek-harness` and `repositories: deepseek-harness` on its `create-github-app-token` step, and that step requires `vars.DSH_ISSUE_APP_CLIENT_ID` plus `secrets.DSH_ISSUE_APP_PRIVATE_KEY`. The fork configures neither, so the action fails with "client-id must be set to a non-empty string".
-3. The required `python runtime / release-shaped Linux x64 / node24-linux-x64` check rebuilds the node-pty addon inside the manylinux 2.28 container by reusing the Makefile `pnpm install` generated on the host. node-pty's `binding.gyp` resolves node-addon-api through `require()`, which follows pnpm's symlink into the sibling `.pnpm/node-addon-api@7.1.1/` store directory; gyp then writes and references the `node_addon_api*` sub-makefiles at a relative path one level too shallow (`../../../node-addon-api@7.1.1/...` from the `build/` directory), so the container `make` stops with `No rule to make target .../node_addon_api_maybe.target.mk`.
-4. One caller workflow combines Issue dispatch, Codex review, DSH repair, and merge intent. It treats mutable labels and a head-only status as durable state, grants unrelated jobs a coupled permission surface, and relies on `repository_dispatch` even while the receiving workflow exists only in the pull request rather than on the default branch. A blocking review can therefore fail to wake DSH during bootstrap, and a later base update can leave a successful head status that no longer represents the reviewed base/head pair.
+3. One caller workflow combines Issue dispatch, Codex review, DSH repair, and merge intent. It treats mutable labels and a head-only status as durable state, grants unrelated jobs a coupled permission surface, and relies on `repository_dispatch` even while the receiving workflow exists only in the pull request rather than on the default branch. A blocking review can therefore fail to wake DSH during bootstrap, and a later base update can leave a successful head status that no longer represents the reviewed base/head pair.
 
 ## Decision
 
@@ -35,10 +34,6 @@ After a push to the repository default branch, reconciliation dispatches review 
 
 ## Alternatives considered
 
-**Keep the host Makefile and patch the broken path in the container.** Creating the missing `node_addon_api*.target.mk` files (empty or with hand-written stamp rules) before `make` would paper over the symlink-derived path without fixing its cause, and the exact stamp names must track gyp's output naming; installing with the hoisted linker fixes the generated dependency path at its source.
-
-**Keep `NODE_OPTIONS=--preserve-symlinks`.** The failed hosted run proved that it did not change the generated dependency path. It also changes every Node process in the install step rather than selecting an install layout that makes node-gyp's generated path reproducible.
-
 **Gate the lifecycle on the private key with a step guard.** A step-level guard can test `secrets`, but a skipped job is the explicit "inert" state the requirement names; `vars.DSH_ISSUE_APP_CLIENT_ID` is set together with the private key in the repositories that own the App, so the job-level variable test is the correct and sufficient fork-safety condition.
 
 **Keep one caller workflow for all agent events.** A single file is shorter, but most event deliveries produce skipped jobs, every change couples unrelated trigger and permission review, and bootstrap behavior is difficult to distinguish from steady-state behavior. Separate callers keep event ownership and permissions visible while reusable workflows retain the implementation.
@@ -49,11 +44,9 @@ After a push to the repository default branch, reconciliation dispatches review 
 
 ## Consequences
 
-The three checks now pass on a fork without App credentials or a matching issue-management Project. The `policy.mjs` derivation changes no upstream behavior: `GITHUB_REPOSITORY` equals the configured coordinates there, and the Project lookup still targets the owning organization.
+The policy and lifecycle checks now pass on a fork without App credentials or a matching issue-management Project. The `policy.mjs` derivation changes no upstream behavior: `GITHUB_REPOSITORY` equals the configured coordinates there, and the Project lookup still targets the owning organization.
 
 A fork that later installs the issue-management App and wants lifecycle status updates must still provide a matching ProjectV2 (`config.json` still names the upstream Project number and title) and both App credentials; the workflow-level changes only make credential absence non-fatal and the App installation self-addressing, they do not provision a fork Project.
-
-The hoisted linker is scoped to the native-build job. A native dependency whose lifecycle depends on isolated pnpm store paths requires its own compatibility review before this job's layout changes again.
 
 The target repository now contains more workflow entry files, but their logic remains in the dedicated automation repository and their immutable pin makes the deployed controller auditable. Labels remain operator-visible projections and recovery triggers, not approval evidence; comments contain the exact pair and visible DSH or Codex task identity needed to supervise a run. CI failure repair is event-driven and creates no model activity while checks are green.
 

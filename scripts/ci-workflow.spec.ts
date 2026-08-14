@@ -327,9 +327,6 @@ describe('Python release workflows', () => {
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
-    if (!isRecord(manylinuxAddon) || typeof manylinuxAddon.run !== 'string') {
-      throw new TypeError('Linux native wheel build must define the node-pty rebuild command')
-    }
     expect(call.inputs).toHaveProperty('targets')
     expect(call.inputs).toMatchObject({
       ci: { type: 'boolean', default: false },
@@ -348,8 +345,6 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
-    expect(JSON.stringify(workflow)).toContain('--config.node-linker=hoisted')
-    expect(JSON.stringify(workflow)).not.toContain('NODE_OPTIONS: --preserve-symlinks')
     expect(macosCheck).toMatchObject({ if: "runner.os == 'macOS'" })
     expect(JSON.stringify(macosCheck)).toContain('scripts/check-macos-deployment-target.py')
     expect(JSON.stringify(macosCheck)).toContain('$EXE-spawn-helper')

@@ -1,17 +1,16 @@
-# Agent Note: Fork-safe automation workflows and node-pty manylinux rebuild
+# Agent Note: Fork-safe agent automation
 
 Status: implemented
 
-[English](2026-08-13-fork-safe-automation-and-node-pty-manylinux-rebuild.md) | 中文
+[English](2026-08-13-fork-safe-agent-automation.md) | 中文
 
 ## Problem
 
-`Ornn8/deepseek-harness` 为运行其 GitHub-agent 自动化流水线而 fork 了上游仓库，但四种故障模式使该 fork 无法自主运行。
+`Ornn8/deepseek-harness` 为运行其 GitHub-agent 自动化流水线而 fork 了上游仓库，但三种故障模式使该 fork 无法自主运行。
 
 1. Issue policy 检查读取 `config.json`，其中 `organization` 与 `repository` 均为 `deepseek-harness`，因此 `policy.mjs pr` 会查询 `/repos/deepseek-harness/deepseek-harness/...`。fork 的 PR 于是从 `requested_reviewers` 端点收到 404，作业失败。
 2. Issue lifecycle 检查在其 `create-github-app-token` 步骤上硬编码了 `owner: deepseek-harness` 与 `repositories: deepseek-harness`，且该步骤需要 `vars.DSH_ISSUE_APP_CLIENT_ID` 与 `secrets.DSH_ISSUE_APP_PRIVATE_KEY`。fork 两者都未配置，于是该 action 以 "client-id must be set to a non-empty string" 失败。
-3. 必选检查 `python runtime / release-shaped Linux x64 / node24-linux-x64` 在 manylinux 2.28 容器内重建 node-pty 插件，方式是复用主机上 `pnpm install` 生成的 Makefile。node-pty 的 `binding.gyp` 通过 `require()` 解析 node-addon-api，而 `require()` 会沿 pnpm 的符号链接进入同级 `.pnpm/node-addon-api@7.1.1/` 存储目录；gyp 随后在一个浅了一层的相对路径（相对 `build/` 目录为 `../../../node-addon-api@7.1.1/...`）上写入并引用 `node_addon_api*` 子 Makefile，于是容器内的 `make` 停在 `No rule to make target .../node_addon_api_maybe.target.mk`。
-4. 一个调用工作流同时承担 Issue 分发、Codex 审核、DSH 返工和合并意图。它把可变标签和仅绑定 head 的状态当作持久状态，让无关作业共用耦合的权限范围，并且在接收工作流只存在于 PR、尚未进入默认分支时就依赖 `repository_dispatch`。因此，引导阶段的阻断审核可能无法唤醒 DSH，而后续 base 更新也可能留下一个已成功但不再代表已审核 base/head 对的 head 状态。
+3. 一个调用工作流同时承担 Issue 分发、Codex 审核、DSH 返工和合并意图。它把可变标签和仅绑定 head 的状态当作持久状态，让无关作业共用耦合的权限范围，并且在接收工作流只存在于 PR、尚未进入默认分支时就依赖 `repository_dispatch`。因此，引导阶段的阻断审核可能无法唤醒 DSH，而后续 base 更新也可能留下一个已成功但不再代表已审核 base/head 对的 head 状态。
 
 ## Decision
 
@@ -35,10 +34,6 @@ PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制�
 
 ## Alternatives considered
 
-**保留主机 Makefile，在容器内修补损坏路径。** 在 `make` 前创建缺失的 `node_addon_api*.target.mk` 文件（空文件或手写 stamp 规则）能掩盖符号链接导致的路径问题，却不能修复其根因，而且确切的 stamp 名称必须跟随 gyp 的输出命名；hoisted linker 安装会在源头修正生成的依赖路径。
-
-**保留 `NODE_OPTIONS=--preserve-symlinks`。** 失败的 hosted run 证明它未能改变生成的依赖路径；它还会影响安装步骤的全部 Node 进程，而不是选择可让 node-gyp 可复现生成路径的安装布局。
-
 **用步骤级守卫根据私钥为 lifecycle 设门。** 步骤级守卫能检测 `secrets`，但被跳过的作业才是需求所指定的显式「惰性」状态；`vars.DSH_ISSUE_APP_CLIENT_ID` 与私钥在拥有 App 的仓库中一同设置，因此作业级变量检测是正确且充分的 fork 安全条件。
 
 **保留一个调用工作流处理全部 agent 事件。** 单文件更短，但多数事件投递只会产生被跳过的作业，每次改动都会耦合无关的触发和权限审核，而且引导阶段行为难以与稳定运行阶段区分。拆分调用器让事件归属和权限可见，同时继续由可复用工作流承载实现。
@@ -49,11 +44,9 @@ PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制�
 
 ## Consequences
 
-这三项检查现在在没有 App 凭据、也没有匹配的 issue-management Project 的 fork 上也能通过。`policy.mjs` 的推导不改变上游行为：在那里 `GITHUB_REPOSITORY` 就等于所配置的坐标，Project 查找仍指向拥有该 Project 的组织。
+在没有 App 凭据、也没有匹配 issue-management Project 的 fork 上，policy 与 lifecycle 检查现在也能通过。`policy.mjs` 的推导不改变上游行为：在那里 `GITHUB_REPOSITORY` 就等于所配置的坐标，Project 查找仍指向拥有该 Project 的组织。
 
 若某个 fork 日后安装了 issue-management App 并希望获得 lifecycle 状态更新，仍需提供匹配的 ProjectV2（`config.json` 仍写死上游的 Project 编号与标题）以及两样 App 凭据；本次工作流级改动只是让凭据缺失不再致命、让 App 安装归属自寻，并不会为 fork 配置 Project。
-
-hoisted linker 被限定在原生构建作业中。若其他原生依赖的生命周期依赖 isolated pnpm store 路径，必须先完成自身的兼容性复核，再改变该作业的布局。
 
 目标仓库现在包含更多工作流入口文件，但其逻辑仍位于专用自动化仓库，固定 revision 也让已部署控制器可审计。标签继续作为操作者可见的投影和恢复触发器，而不是批准证据；评论包含精确版本对和可见的 DSH 或 Codex 任务标识，足以监管一次运行。CI 失败返工完全由事件驱动，检查为绿色时不会产生任何模型活动。
 

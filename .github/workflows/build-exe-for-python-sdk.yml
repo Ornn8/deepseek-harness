@@ -180,10 +180,7 @@ jobs:
             pkg-fetch-${{ matrix.target }}-
 
       - name: Install (immutable)
-        # node-pty's generated Makefile must be relocatable into the
-        # manylinux container. The hoisted layout gives gyp a stable sibling
-        # path for node-addon-api instead of a pnpm store path.
-        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+        run: pnpm install --frozen-lockfile
 
       - name: Rebuild Linux node-pty against manylinux 2.28
         if: runner.os == 'Linux'
@@ -197,7 +194,6 @@ jobs:
             *) echo "::error::Unsupported Linux runner architecture $RUNNER_ARCH"; exit 1 ;;
           esac
           addon_dir="$(realpath packages/subprocess/subprocess-local/node_modules/node-pty)"
-          npm_config_build_from_source=true npm --prefix "$addon_dir" run install
           addon="$addon_dir/build/Release/pty.node"
           [ -f "$addon_dir/build/Makefile" ] || {
             echo "::error::node-pty install did not generate $addon_dir/build/Makefile"
