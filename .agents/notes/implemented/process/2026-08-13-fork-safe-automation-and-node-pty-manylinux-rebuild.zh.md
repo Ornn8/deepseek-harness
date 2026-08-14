@@ -23,7 +23,7 @@ Status: implemented
 
 `issue-lifecycle.yml` 在作业级 `if` 上加入 `vars.DSH_ISSUE_APP_CLIENT_ID != ''`，使无凭据的仓库（包括本 fork）跳过作业而不是令其失败，并从 `github.repository_owner` 与 `github.event.repository.name` 推导 App 安装归属，使安装了 App 的 fork 指向自身安装而非上游。
 
-`build-exe-for-python-sdk.yml` 以 pnpm 的 hoisted linker 安装原生构建作业。node-gyp 会针对稳定的作业级布局写入 node-addon-api 依赖路径，再将 node-pty Makefile 挂载进 manylinux 容器；生成的 Makefile 不再依赖容器中缺失的包存储相对路径。
+`build-exe-for-python-sdk.yml` 以 pnpm 的 hoisted linker 安装原生构建作业，随后在 Linux 上强制从源码重建 node-pty。该重建会绕过随包提供的预编译文件，让 node-gyp 针对稳定的作业级 node-addon-api 布局生成 Makefile，再将其挂载进 manylinux 容器。容器随后针对 glibc 2.28 重建该插件。
 
 目标仓库用相互独立的工作流负责 Issue 分发、精确版本对 PR 审核、可信返工反馈、显式落地和健康检查。每个调用方在 `uses` 中固定可复用工作流 revision；控制器 revision、角色 worker 和 runner 选择由控制器持有，不再作为调用方输入。包括项目生命周期和 Issue policy 在内的所有特权 PR listener 都使用 `pull_request_target` 并签出默认分支 policy，因此 PR 在进入默认分支前不能替换特权工作流定义。review-submitted 事件不再作为特权输入；自动化 BLOCK 标签会通过可信 target listener 进入同一生命周期。
 
@@ -37,7 +37,7 @@ PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制�
 
 ## Alternatives considered
 
-**保留主机 Makefile，在容器内修补损坏路径。** 在 `make` 前创建缺失的 `node_addon_api*.target.mk` 文件（空文件或手写 stamp 规则）能掩盖符号链接导致的路径问题，却不能修复其根因，而且确切的 stamp 名称必须跟随 gyp 的输出命名；hoisted linker 安装会在源头修正生成的依赖路径。
+**保留主机 Makefile，在容器内修补损坏路径。** 在 `make` 前创建缺失的 `node_addon_api*.target.mk` 文件（空文件或手写 stamp 规则）能掩盖符号链接导致的路径问题，却不能修复其根因，而且确切的 stamp 名称必须跟随 gyp 的输出命名；hoisted 布局配合显式源码重建会在源头修正生成的依赖路径。
 
 **保留 `NODE_OPTIONS=--preserve-symlinks`。** 失败的 hosted run 证明它未能改变生成的依赖路径；它还会影响安装步骤的全部 Node 进程，而不是选择可让 node-gyp 可复现生成路径的安装布局。
 
@@ -55,7 +55,7 @@ PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制�
 
 若某个 fork 日后安装了 issue-management App 并希望获得 lifecycle 状态更新，仍需提供匹配的 ProjectV2（`config.json` 仍写死上游的 Project 编号与标题）以及两样 App 凭据；本次工作流级改动只是让凭据缺失不再致命、让 App 安装归属自寻，并不会为 fork 配置 Project。
 
-hoisted linker 被限定在原生构建作业中。若其他原生依赖的生命周期依赖 isolated pnpm store 路径，必须先完成自身的兼容性复核，再改变该作业的布局。
+hoisted linker 和强制源码重建只用于 Linux 原生构建作业中的 node-pty。若其他原生依赖的生命周期依赖 isolated pnpm store 路径，必须先完成自身的兼容性复核，再改变该作业的布局。
 
 目标仓库现在包含更多工作流入口文件，但其逻辑仍位于专用自动化仓库，固定 revision 也让已部署控制器可审计。标签继续作为操作者可见的投影和恢复触发器，而不是批准证据；评论包含精确版本对和可见的 DSH 或 Codex 任务标识，足以监管一次运行。CI 失败返工完全由事件驱动，检查为绿色时不会产生任何模型活动。
 

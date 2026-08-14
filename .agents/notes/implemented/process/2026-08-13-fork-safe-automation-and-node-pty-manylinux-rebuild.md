@@ -23,7 +23,7 @@ Failed or cancelled top-level Agent Issues and Agent PR Rework runs now enter a 
 
 `issue-lifecycle.yml` adds `vars.DSH_ISSUE_APP_CLIENT_ID != ''` to the job-level `if`, so a credential-less repository (including this fork) skips the job instead of failing it, and derives the App installation from `github.repository_owner` and `github.event.repository.name` so an App-installed fork addresses its own installation rather than upstream.
 
-`build-exe-for-python-sdk.yml` installs the native-build job with pnpm's hoisted linker. node-gyp then writes the node-addon-api dependency path against the stable job-level layout before the node-pty Makefile is mounted into the manylinux container; the generated Makefile no longer depends on the package-store-relative path that was missing in the container.
+`build-exe-for-python-sdk.yml` installs the native-build job with pnpm's hoisted linker, then forces a Linux source rebuild of node-pty. The forced rebuild bypasses the packaged prebuild, invokes node-gyp against the stable job-level node-addon-api layout, and generates the Makefile before it is mounted into the manylinux container. The container then rebuilds the addon against glibc 2.28.
 
 The target repository uses separate workflows for Issue dispatch, exact-pair PR review, trusted rework feedback, explicit landing, and health. Each caller pins the reusable workflow revision in `uses`; the controller revision, role worker, and runner selection are controller-owned rather than caller inputs. Every privileged pull request listener, including project lifecycle and Issue policy, uses `pull_request_target` and checks out the default-branch policy, so a pull request cannot replace a privileged workflow definition before it reaches the default branch. Review-submitted events are not privileged inputs; the automated BLOCK label reaches the same lifecycle through the trusted target listener.
 
@@ -37,7 +37,7 @@ After a push to the repository default branch, reconciliation dispatches review 
 
 ## Alternatives considered
 
-**Keep the host Makefile and patch the broken path in the container.** Creating the missing `node_addon_api*.target.mk` files (empty or with hand-written stamp rules) before `make` would paper over the symlink-derived path without fixing its cause, and the exact stamp names must track gyp's output naming; installing with the hoisted linker fixes the generated dependency path at its source.
+**Keep the host Makefile and patch the broken path in the container.** Creating the missing `node_addon_api*.target.mk` files (empty or with hand-written stamp rules) before `make` would paper over the symlink-derived path without fixing its cause, and the exact stamp names must track gyp's output naming; the hoisted layout plus an explicit source rebuild fixes the generated dependency path at its source.
 
 **Keep `NODE_OPTIONS=--preserve-symlinks`.** The failed hosted run proved that it did not change the generated dependency path. It also changes every Node process in the install step rather than selecting an install layout that makes node-gyp's generated path reproducible.
 
@@ -55,7 +55,7 @@ The three checks now pass on a fork without App credentials or a matching issue-
 
 A fork that later installs the issue-management App and wants lifecycle status updates must still provide a matching ProjectV2 (`config.json` still names the upstream Project number and title) and both App credentials; the workflow-level changes only make credential absence non-fatal and the App installation self-addressing, they do not provision a fork Project.
 
-The hoisted linker is scoped to the native-build job. A native dependency whose lifecycle depends on isolated pnpm store paths requires its own compatibility review before this job's layout changes again.
+The hoisted linker and forced source rebuild are scoped to node-pty in the Linux native-build job. A native dependency whose lifecycle depends on isolated pnpm store paths requires its own compatibility review before this job's layout changes again.
 
 The target repository now contains more workflow entry files, but their logic remains in the dedicated automation repository and their immutable pin makes the deployed controller auditable. Labels remain operator-visible projections and recovery triggers, not approval evidence; comments contain the exact pair and visible DSH or Codex task identity needed to supervise a run. CI failure repair is event-driven and creates no model activity while checks are green.
 
