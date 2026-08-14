@@ -346,6 +346,8 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
+    expect(manylinuxAddon.run).toContain("require.resolve('node-pty/package.json'")
+    expect(manylinuxAddon.run).not.toContain('realpath packages/subprocess/subprocess-local/node_modules/node-pty')
     expect(manylinuxAddon.run).toContain('npm_config_build_from_source=true npm --prefix "$addon_dir" run install')
     expect(manylinuxAddon.run).not.toContain('pnpm --dir "$addon_dir"')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
