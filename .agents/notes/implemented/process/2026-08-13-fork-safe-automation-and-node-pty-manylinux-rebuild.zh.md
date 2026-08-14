@@ -23,7 +23,7 @@ Status: implemented
 
 `issue-lifecycle.yml` 在作业级 `if` 上加入 `vars.DSH_ISSUE_APP_CLIENT_ID != ''`，使无凭据的仓库（包括本 fork）跳过作业而不是令其失败，并从 `github.repository_owner` 与 `github.event.repository.name` 推导 App 安装归属，使安装了 App 的 fork 指向自身安装而非上游。
 
-`build-exe-for-python-sdk.yml` 以 pnpm 的 hoisted linker 安装原生构建作业，把已安装的 node-pty 解析到存储目录中的真实路径，再通过 `npm --prefix` 调用其 npm 生命周期以强制在 Linux 上从源码重建。对真实目录调用 npm 可避免 pnpm 重新校验工作区符号链接；该重建同时绕过随包提供的预编译文件，让 node-gyp 针对稳定的作业级 node-addon-api 布局生成 Makefile，再将其挂载进 manylinux 容器。容器随后针对 glibc 2.28 重建该插件。
+`build-exe-for-python-sdk.yml` 以 pnpm 的 hoisted linker 安装原生构建作业，通过 Node 模块解析器定位已安装的 node-pty，再通过 `npm --prefix` 调用其 npm 生命周期以强制在 Linux 上从源码重建。对解析出的目录调用 npm 可避免猜测 pnpm 的工作区或存储布局；该重建同时绕过随包提供的预编译文件，让 node-gyp 针对稳定的作业级 node-addon-api 布局生成 Makefile，再将其挂载进 manylinux 容器。生成的 Makefile 还会引用 npm 的 node-gyp `addon.gypi`，因此作业从 `process.execPath` 推导当前 Node 安装前缀、验证该文件，并把此前缀以相同绝对路径只读挂载。容器随后针对 glibc 2.28 重建该插件。
 
 目标仓库用相互独立的工作流负责 Issue 分发、精确版本对 PR 审核、可信返工反馈、显式落地和健康检查。每个调用方在 `uses` 中固定可复用工作流 revision；控制器 revision、角色 worker 和 runner 选择由控制器持有，不再作为调用方输入。CI 修复与 CI 触发的落地工作流把所配置的 CI 工作流名称声明为字面量 `workflow_run.workflows` 订阅，使 GitHub 能注册这些 listener，再在分发前把收到的名称与 `DSH_AUTOMATION_CI_WORKFLOW` 比对。包括项目生命周期和 Issue policy 在内的所有特权 PR listener 都使用 `pull_request_target` 并签出默认分支 policy，因此 PR 在进入默认分支前不能替换特权工作流定义。review-submitted 事件不再作为特权输入；自动化 BLOCK 标签会通过可信 target listener 进入同一生命周期。
 

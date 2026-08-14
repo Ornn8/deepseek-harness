@@ -201,6 +201,12 @@ jobs:
             echo "::error::Node resolved node-pty to missing package metadata: $addon_package"
             exit 1
           }
+          node_prefix="$(dirname "$(dirname "$(node -p 'process.execPath')")")"
+          node_gyp_addon="$node_prefix/lib/node_modules/npm/node_modules/node-gyp/addon.gypi"
+          [ -f "$node_gyp_addon" ] || {
+            echo "::error::npm's node-gyp addon.gypi is missing: $node_gyp_addon"
+            exit 1
+          }
           npm_config_build_from_source=true npm --prefix "$addon_dir" run install
           addon="$addon_dir/build/Release/pty.node"
           [ -f "$addon_dir/build/Makefile" ] || {
@@ -211,7 +217,7 @@ jobs:
             --user "$(id -u):$(id -g)" \
             -v "$PWD:$PWD" \
             -v "$HOME/.cache/node-gyp:$HOME/.cache/node-gyp:ro" \
-            -v "$HOME/setup-pnpm:$HOME/setup-pnpm:ro" \
+            -v "$node_prefix:$node_prefix:ro" \
             -w "$addon_dir" \
             "$image" \
             bash -euxo pipefail -c \
