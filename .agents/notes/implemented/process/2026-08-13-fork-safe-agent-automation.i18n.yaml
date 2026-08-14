@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-13-fork-safe-agent-automation.md
-2026-08-13-fork-safe-agent-automation.md: e0e5e4a876e1c927e37d10f3eeb51acdc0b8e406
-2026-08-13-fork-safe-agent-automation.zh.md: 65d6bee3d670fa9a1846fdedab683ad7178a86a8
+2026-08-13-fork-safe-agent-automation.md: f10171e76c4e43e6e9d25b00f6b49a0417a164d3
+2026-08-13-fork-safe-agent-automation.zh.md: f68bddb0206fda15bd99502c2111a78157135eef
