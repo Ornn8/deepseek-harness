@@ -25,7 +25,7 @@ Status: implemented
 
 目标仓库用相互独立的薄工作流替换组合调用器，分别负责 Issue 分发、精确版本对 PR 审核、可信返工反馈、显式落地和按需健康检查。每个可复用工作流及其控制器 checkout 都使用专用 `Ornn8/dsh-agent-automation` 仓库中的同一个完整 commit SHA，因此控制器升级会成为目标仓库内一次可审核的改动。
 
-Codex 获得精确 base/head checkout，不获得 GitHub 凭据，并只做只读检查。作业级 Actions token 发布 pending 或最终 `codex/review` 状态、英文审核评论和投影标签。DSH 保留负责分支写入的主机 GitHub 身份。BLOCK 结论记录精确版本对，发出幂等 `dsh-repair` repository dispatch，并添加 `automation/review-blocked`；在 dispatch 接收器尚未进入默认分支时，PR 标签事件充当引导传输，但返工控制器在启动可见 DSH 会话前仍会校验实时 head 和审核标记。
+Codex 获得精确 base/head checkout，不获得 GitHub 凭据，并只做只读检查。作业级 Actions token 发布 pending 或最终 `codex/review` 状态、英文审核评论和投影标签。DSH 保留负责分支写入的主机 GitHub 身份。BLOCK 结论记录精确版本对，发出幂等 `dsh-repair` repository dispatch，并添加 `automation/review-blocked`；在 dispatch 接收器尚未进入默认分支时，PR 标签事件充当引导传输，但返工控制器在启动可见 DSH 会话前仍会校验实时 head 和审核标记。已完成且失败的 `CI` workflow run 会创建一个由 run id 和 attempt 标识的独立请求；只有工作流名为 `CI`、结论为失败、PR 编号匹配且 head 正是当前值时，控制器才允许 DSH 检查日志或修改分支。
 
 PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制器只接受当前指向 `master` 的非草稿 PR，要求精确 base/head PASS 记录和所有实时分支保护上下文均成功，在 squash merge 前立即重复这些检查，否则不改变 PR 即退出。成功的 `CI` workflow run 会在待定检查完成后重试落地。
 
@@ -53,6 +53,6 @@ PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制�
 
 `--preserve-symlinks` 作用于安装步骤中的每一个 Node 进程，而不仅是 node-gyp。它被限定在这一个构建作业的安装步骤内；未来若有原生依赖的 postinstall 依赖「把 pnpm 符号链接解析为真实路径」，需要做同样的根因复核，而不是直接大范围移除该标志。
 
-目标仓库现在包含更多工作流入口文件，但其逻辑仍位于专用自动化仓库，固定 revision 也让已部署控制器可审计。标签继续作为操作者可见的投影和恢复触发器，而不是批准证据；评论包含精确版本对和可见的 DSH 或 Codex 任务标识，足以监管一次运行。
+目标仓库现在包含更多工作流入口文件，但其逻辑仍位于专用自动化仓库，固定 revision 也让已部署控制器可审计。标签继续作为操作者可见的投影和恢复触发器，而不是批准证据；评论包含精确版本对和可见的 DSH 或 Codex 任务标识，足以监管一次运行。CI 失败返工完全由事件驱动，检查为绿色时不会产生任何模型活动。
 
 Actions 发布者把 Codex 的发布身份与 DSH 和落地使用的主机身份分开，但自托管 runner 以及后两项操作仍共用一个持久主机 GitHub 登录。完整进程隔离和独立 GitHub App 仍属于后续安全加固；本次改动不声称已经实现这种隔离。

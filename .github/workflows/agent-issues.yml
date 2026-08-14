@@ -19,25 +19,25 @@ jobs:
       || (github.event_name == 'issues'
         && github.event.action == 'labeled'
         && github.event.label.name == 'agent/dsh-failed')
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dispatch-backlog.yml@f084384617a5db8bbe5c8c96ddf86d7b10f4291c
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dispatch-backlog.yml@21314cce10e0c3e36a710647bc129186d0899e04
     with:
       repository: ${{ github.repository }}
-      controller_sha: f084384617a5db8bbe5c8c96ddf86d7b10f4291c
+      controller_sha: 21314cce10e0c3e36a710647bc129186d0899e04
 
   dsh-issue:
     if: >-
       github.event_name == 'issues'
       && github.event.label.name == 'agent/dsh'
       && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@f084384617a5db8bbe5c8c96ddf86d7b10f4291c
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@21314cce10e0c3e36a710647bc129186d0899e04
     with:
       repository: ${{ github.repository }}
       issue_number: ${{ github.event.issue.number }}
-      controller_sha: f084384617a5db8bbe5c8c96ddf86d7b10f4291c
+      controller_sha: 21314cce10e0c3e36a710647bc129186d0899e04
 
   reconcile-reviews:
     if: github.event_name == 'push'
-    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-reviews.yml@f084384617a5db8bbe5c8c96ddf86d7b10f4291c
+    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-reviews.yml@21314cce10e0c3e36a710647bc129186d0899e04
     with:
       repository: ${{ github.repository }}
-      controller_sha: f084384617a5db8bbe5c8c96ddf86d7b10f4291c
+      controller_sha: 21314cce10e0c3e36a710647bc129186d0899e04

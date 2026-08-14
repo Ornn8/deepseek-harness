@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   health:
-    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@f084384617a5db8bbe5c8c96ddf86d7b10f4291c
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@21314cce10e0c3e36a710647bc129186d0899e04
     with:
       repository: ${{ github.repository }}
-      controller_sha: f084384617a5db8bbe5c8c96ddf86d7b10f4291c
+      controller_sha: 21314cce10e0c3e36a710647bc129186d0899e04

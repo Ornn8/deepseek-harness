@@ -391,13 +391,14 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = 'f084384617a5db8bbe5c8c96ddf86d7b10f4291c'
+  const controllerSha = '21314cce10e0c3e36a710647bc129186d0899e04'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
       '.github/workflows/agent-health.yml',
       '.github/workflows/agent-issues.yml',
       '.github/workflows/agent-pr-land.yml',
+      '.github/workflows/agent-pr-ci-repair.yml',
       '.github/workflows/agent-pr-review.yml',
       '.github/workflows/agent-pr-rework.yml',
     ]
@@ -416,6 +417,7 @@ describe('Agent automation workflows', () => {
   it('separates review publication, repair wakeups, landing, and model-free health', () => {
     const review = loadWorkflow('.github/workflows/agent-pr-review.yml')
     const rework = loadWorkflow('.github/workflows/agent-pr-rework.yml')
+    const ciRepair = loadWorkflow('.github/workflows/agent-pr-ci-repair.yml')
     const landing = loadWorkflow('.github/workflows/agent-pr-land.yml')
     const health = loadWorkflow('.github/workflows/agent-health.yml')
 
@@ -428,7 +430,9 @@ describe('Agent automation workflows', () => {
     expect(workflowEvent(review, 'repository_dispatch')).toEqual({ types: ['dsh-review'] })
     expect(workflowEvent(rework, 'repository_dispatch')).toEqual({ types: ['dsh-repair'] })
     expect(workflowEvent(rework, 'pull_request')).toEqual({ types: ['labeled'] })
-    expect(workflowJob(rework, 'dsh-repair').if).toContain("github.event.label.name == 'automation/review-blocked'")
+    expect(workflowJob(rework, 'dsh-repair').if).toContain('["automation/review-blocked","automation/ci-failed"]')
+    expect(workflowEvent(ciRepair, 'workflow_run')).toEqual({ workflows: ['CI'], types: ['completed'] })
+    expect(workflowJob(ciRepair, 'dsh-ci-repair').if).toContain("github.event.workflow_run.conclusion == 'failure'")
     expect(workflowEvent(landing, 'repository_dispatch')).toEqual({ types: ['dsh-land'] })
     expect(workflowEvent(landing, 'workflow_run')).toEqual({ workflows: ['CI'], types: ['completed'] })
     expect(health.on).toEqual({ workflow_dispatch: null })
