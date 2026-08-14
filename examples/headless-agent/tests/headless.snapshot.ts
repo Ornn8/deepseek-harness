@@ -85,7 +85,13 @@ async function deepseekDefaultsServer(): Promise<DeepSeekDefaultsServer> {
     request.on('end', () => {
       requests.push(JSON.parse(body) as JsonObject)
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      let keepAlives = 3
+      // Comments alone keep the adapter's idle watchdog rearmed: the keep-alive
+      // span exceeds the fixture's streamIdleTimeoutMs, so the single-request
+      // contract fails loudly if comments ever stop counting as transport
+      // activity. The 60ms cadence against a 1000ms timeout leaves an order of
+      // magnitude of headroom for CI event-loop jitter (a loaded runner used to
+      // trip the 150ms margin and turn the one request into a retried pair).
+      let keepAlives = 25
       const write = (): void => {
         if (keepAlives-- > 0) {
           response.write(': keep-alive\n\n')

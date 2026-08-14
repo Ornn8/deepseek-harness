@@ -7,7 +7,12 @@
         config:
           baseURL: !!js process.env.DSH_SNAPSHOT_BASE_URL
           thinking: disabled
-          streamIdleTimeoutMs: 150
+          # Wider than the mock's 60ms keep-alive cadence by an order of
+          # magnitude: the snapshot proves comments rearm the idle watchdog
+          # (the keep-alive span exceeds this timeout), while a loaded CI event
+          # loop used to slip past the old 150ms margin and turn the single
+          # request into a retried pair.
+          streamIdleTimeoutMs: 1000
       - id: agent-spine
         config:
           agents:

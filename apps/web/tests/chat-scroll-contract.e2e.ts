@@ -467,9 +467,20 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('preserves the reader anchor when history and streaming arrive concurrently', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-history-stream',
-      replay: [replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, 120))],
+      // The live turn opens with the same file-gated tool call as the other
+      // streaming scenarios: the text stream cannot start until the release
+      // file appears, so the scroll/hold/anchor steps below run while the turn
+      // is provably mid-flight instead of racing a wall-clock stream end under
+      // CI load (the pace-based stream used to finish before the anchor and
+      // the chunk-poll then starved).
+      replay: [
+        replayEntry(toolStream()),
+        replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, 120)),
+      ],
       seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
     }, async (world) => {
+      const readyPath = join(world.scaffold.workspaceCwd, TOOL_READY_FILE)
+      const releasePath = join(world.scaffold.workspaceCwd, TOOL_RELEASE_FILE)
       await openSeed(
         world.page,
         HISTORY_FIXTURE,
@@ -495,11 +506,12 @@ describe('web e2e: long Chat scroll contract', () => {
       })
 
       const settled = world.scaffold.whenTurnSettled(60_000)
+      let released = false
       try {
         const composer = world.page.locator('textarea:enabled').last()
         await composer.fill(LIVE_TEXT_PROMPT)
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
-        await world.page.getByText(LIVE_TEXT_FIRST, { exact: false }).last().waitFor({ timeout: 15_000 })
+        await expect.poll(() => fileExists(readyPath), { timeout: 15_000 }).toBe(true)
         await wheelToHistoryStart(world.page)
         const beforeRows = await loadedFlowRows(world.page)
         await world.page.getByRole('button', { name: 'Load earlier', exact: true }).click()
@@ -508,9 +520,11 @@ describe('web e2e: long Chat scroll contract', () => {
         await wheelTranscript(world.page, 420)
         const readerAnchor = await visibleFlowAnchor(world.page)
         const chunksAfterAnchor = world.events.filter(event => event.type === 'assistant/chunk').length
+        await writeFile(releasePath, 'release\n')
+        released = true
         await expect.poll(
           () => world.events.filter(event => event.type === 'assistant/chunk').length,
-          { timeout: 10_000 },
+          { timeout: 15_000 },
         ).toBeGreaterThan(chunksAfterAnchor + 5)
 
         releaseHistory()
@@ -518,6 +532,7 @@ describe('web e2e: long Chat scroll contract', () => {
         await nextPaint(world.page)
         await expectSameFlowTop(world.page, readerAnchor)
       } finally {
+        if (!released) await writeFile(releasePath, 'release\n').catch(() => {})
         releaseHistory()
       }
 
