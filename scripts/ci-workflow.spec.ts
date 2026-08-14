@@ -325,7 +325,6 @@ describe('Python release workflows', () => {
 
     const buildSteps: unknown[] = build.steps
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
-    const glibcCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check Linux GLIBC requirements')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
     if (!isRecord(manylinuxAddon) || typeof manylinuxAddon.run !== 'string') {
@@ -346,31 +345,16 @@ describe('Python release workflows', () => {
     expect(manylinuxAddon).toMatchObject({ if: "runner.os == 'Linux'" })
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
-    expect(manylinuxAddon.run).toContain("node -p 'process.execPath'")
-    expect(manylinuxAddon.run).toContain('node_gyp_addon="$node_prefix/lib/node_modules/npm/node_modules/node-gyp/addon.gypi"')
-    expect(manylinuxAddon.run).toContain('-v "$node_prefix:$node_prefix:ro"')
-    expect(manylinuxAddon.run).not.toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
-    expect(manylinuxAddon.run).toContain("require.resolve('node-pty/package.json'")
-    expect(manylinuxAddon.run).not.toContain('realpath packages/subprocess/subprocess-local/node_modules/node-pty')
-    expect(manylinuxAddon.run).toContain('npm_config_build_from_source=true npm --prefix "$addon_dir" run install')
-    expect(manylinuxAddon.run).not.toContain('pnpm --dir "$addon_dir"')
+    expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
     expect(JSON.stringify(workflow)).toContain('--config.node-linker=hoisted')
     expect(JSON.stringify(workflow)).not.toContain('NODE_OPTIONS: --preserve-symlinks')
     expect(macosCheck).toMatchObject({ if: "runner.os == 'macOS'" })
     expect(JSON.stringify(macosCheck)).toContain('scripts/check-macos-deployment-target.py')
-    expect(JSON.stringify(macosCheck)).toContain('$EXE-pty.node')
     expect(JSON.stringify(macosCheck)).toContain('$EXE-spawn-helper')
     expect(manylinuxSmoke).toMatchObject({ if: "runner.os == 'Linux'" })
     expect(JSON.stringify(manylinuxSmoke)).toContain('-e DSH_TELEMETRY_DISABLED')
-    expect(JSON.stringify(manylinuxSmoke)).toContain('bundled_runtime_path')
-    expect(JSON.stringify(manylinuxSmoke)).toContain('$runtime-pty.node')
-    expect(JSON.stringify(manylinuxSmoke)).toContain('ldd \\"$runtime-pty.node\\"')
-    expect(JSON.stringify(manylinuxSmoke)).not.toContain('PKG_NATIVE_CACHE_PATH')
-    expect(JSON.stringify(glibcCheck)).toContain('for artifact in')
-    expect(JSON.stringify(glibcCheck)).toContain('-pty.node')
-    expect(JSON.stringify(glibcCheck)).toContain('$artifact requires GLIBC_')
   })
 
   it('uses the shared macOS deployment-target check in GitLab', () => {
@@ -383,16 +367,12 @@ describe('Python release workflows', () => {
     const macosCheck = runtimeScript.find(
       step => typeof step === 'string' && step.includes('PLATFORM" = macos-arm64'),
     )
-    const linuxCheck = runtimeScript.find(
-      step => typeof step === 'string' && step.includes('readelf --version-info'),
-    )
     if (typeof macosCheck !== 'string') {
       throw new TypeError('GitLab CI must check the macOS deployment target')
     }
 
     expect(macosCheck).toContain('scripts/check-macos-deployment-target.py')
-    expect(macosCheck).toContain('"$EXE" "$EXE-pty.node" "$EXE-spawn-helper"')
-    expect(linuxCheck).toContain('for artifact in "$EXE" "$EXE-pty.node"')
+    expect(macosCheck).toContain('"$EXE" "$EXE-spawn-helper"')
   })
 })
 

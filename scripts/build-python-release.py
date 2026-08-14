@@ -48,11 +48,7 @@ PLATFORMS = load_platforms()
 
 
 def runtime_suffixes(executable_name: str) -> tuple[str, ...]:
-    return (
-        ("", "-pty.node", "-spawn-helper")
-        if "-macos-" in executable_name
-        else ("", "-pty.node")
-    )
+    return ("", "-spawn-helper") if "-macos-" in executable_name else ("",)
 
 
 def main() -> None:
@@ -258,13 +254,9 @@ def verify_wheel(
             if found_files != expected_files:
                 raise RuntimeError(f"{wheel} runtime payload must be {expected_files}, found {found_files}")
             for runtime_file in runtime_files:
-                if runtime_file.endswith("-pty.node"):
-                    if archive.getinfo(runtime_file).file_size == 0:
-                        raise RuntimeError(f"{wheel} runtime node-pty addon is empty: {runtime_file}")
-                else:
-                    mode = archive.getinfo(runtime_file).external_attr >> 16
-                    if mode & stat.S_IXUSR == 0:
-                        raise RuntimeError(f"{wheel} runtime executable lost its executable bit: {runtime_file}")
+                mode = archive.getinfo(runtime_file).external_attr >> 16
+                if mode & stat.S_IXUSR == 0:
+                    raise RuntimeError(f"{wheel} runtime executable lost its executable bit: {runtime_file}")
         elif runtime_files:
             raise RuntimeError(f"SDK wheel unexpectedly contains runtime executables: {runtime_files}")
         if package == "sdk":

@@ -185,7 +185,7 @@ Direct dependencies of the `pyproject.toml` manifests, plus `uv` as the developm
 
 | Package | License | Role |
 | --- | --- | --- |
-| [`@yao-pkg/pkg`](https://github.com/yao-pkg/pkg) | MIT | invoked by `scripts/build-exe-for-python-sdk.ts` to assemble the packaged SDK runtime executable |
+| [`@yao-pkg/pkg`](https://github.com/yao-pkg/pkg) | MIT | invoked by `scripts/build-exe-for-python-sdk.ts` to assemble the single-file SDK runtime executable |
 
 ## First-party native packages
 

@@ -180,8 +180,9 @@ jobs:
             pkg-fetch-${{ matrix.target }}-
 
       - name: Install (immutable)
-        # The Linux source rebuild below needs node-addon-api at a stable
-        # sibling path instead of behind a pnpm store symlink.
+        # node-pty's generated Makefile must be relocatable into the
+        # manylinux container. The hoisted layout gives gyp a stable sibling
+        # path for node-addon-api instead of a pnpm store path.
         run: pnpm install --frozen-lockfile --config.node-linker=hoisted
 
       - name: Rebuild Linux node-pty against manylinux 2.28
@@ -195,18 +196,7 @@ jobs:
             ARM64) image=quay.io/pypa/manylinux_2_28_aarch64 ;;
             *) echo "::error::Unsupported Linux runner architecture $RUNNER_ARCH"; exit 1 ;;
           esac
-          addon_package="$(node -p "require.resolve('node-pty/package.json', { paths: [process.cwd() + '/packages/subprocess/subprocess-local'] })")"
-          addon_dir="$(dirname "$addon_package")"
-          [ -f "$addon_package" ] || {
-            echo "::error::Node resolved node-pty to missing package metadata: $addon_package"
-            exit 1
-          }
-          node_prefix="$(dirname "$(dirname "$(node -p 'process.execPath')")")"
-          node_gyp_addon="$node_prefix/lib/node_modules/npm/node_modules/node-gyp/addon.gypi"
-          [ -f "$node_gyp_addon" ] || {
-            echo "::error::npm's node-gyp addon.gypi is missing: $node_gyp_addon"
-            exit 1
-          }
+          addon_dir="$(realpath packages/subprocess/subprocess-local/node_modules/node-pty)"
           npm_config_build_from_source=true npm --prefix "$addon_dir" run install
           addon="$addon_dir/build/Release/pty.node"
           [ -f "$addon_dir/build/Makefile" ] || {
@@ -217,7 +207,7 @@ jobs:
             --user "$(id -u):$(id -g)" \
             -v "$PWD:$PWD" \
             -v "$HOME/.cache/node-gyp:$HOME/.cache/node-gyp:ro" \
-            -v "$node_prefix:$node_prefix:ro" \
+            -v "$HOME/setup-pnpm:$HOME/setup-pnpm:ro" \
             -w "$addon_dir" \
             "$image" \
             bash -euxo pipefail -c \
@@ -244,7 +234,6 @@ jobs:
           platform="${TARGET#node24-}"
           exe="$PWD/dist-exe/dsh-jsonrpc-agent-pkg-$platform"
           [ -x "$exe" ] || { echo "::error::$exe missing or not executable"; exit 1; }
-          [ -s "$exe-pty.node" ] || { echo "::error::$exe-pty.node missing or empty"; exit 1; }
           case "$platform" in
             linux-x64) wheel=deepseek_harness_runtime_bin-$VERSION-py3-none-manylinux_2_28_x86_64.whl ;;
             linux-arm64) wheel=deepseek_harness_runtime_bin-$VERSION-py3-none-manylinux_2_28_aarch64.whl ;;
@@ -291,16 +280,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          for artifact in "${{ steps.runtime.outputs.exe }}" "${{ steps.runtime.outputs.exe }}-pty.node"; do
-            versions="glibc-$(basename "$artifact").txt"
-            readelf --version-info "$artifact" | tee "$versions"
-            maximum="$(sed -n 's/.*Name: GLIBC_\([0-9.]*\).*/\1/p' "$versions" | sort -V | tail -1)"
-            [ -n "$maximum" ] || { echo "::error::No GLIBC requirements found in $artifact"; exit 1; }
-            dpkg --compare-versions "$maximum" le 2.28 || {
-              echo "::error::$artifact requires GLIBC_$maximum but wheel claims manylinux_2_28"
-              exit 1
-            }
-          done
+          readelf --version-info "${{ steps.runtime.outputs.exe }}" | tee glibc-versions.txt
+          maximum="$(sed -n 's/.*Name: GLIBC_\([0-9.]*\).*/\1/p' glibc-versions.txt | sort -V | tail -1)"
+          [ -n "$maximum" ] || { echo "::error::No GLIBC requirements found"; exit 1; }
+          dpkg --compare-versions "$maximum" le 2.28 || {
+            echo "::error::Executable requires GLIBC_$maximum but wheel claims manylinux_2_28"
+            exit 1
+          }
 
       - name: Check macOS deployment target
         if: runner.os == 'macOS'
@@ -308,7 +294,7 @@ jobs:
           EXE: ${{ steps.runtime.outputs.exe }}
         run: >-
           python3 scripts/check-macos-deployment-target.py
-          "$EXE" "$EXE-pty.node" "$EXE-spawn-helper"
+          "$EXE" "$EXE-spawn-helper"
 
       - name: Run wheel in a manylinux 2.28 container
         if: runner.os == 'Linux'
@@ -325,13 +311,6 @@ jobs:
           docker run --rm -e VERSION -e DSH_TELEMETRY_DISABLED -v "$PWD:/work" -w /work "$image" bash -euxo pipefail -c '
             /opt/python/cp310-cp310/bin/python -m venv /tmp/dsh-sdk
             /tmp/dsh-sdk/bin/python -m pip install --find-links /work/dist-python deepseek-harness-sdk=="$VERSION"
-            runtime="$(/tmp/dsh-sdk/bin/python -c "from deepseek_harness_runtime import bundled_runtime_path; print(bundled_runtime_path())")"
-            [ -s "$runtime-pty.node" ] || {
-              echo "::error::Installed runtime is missing $runtime-pty.node"
-              exit 1
-            }
-            ldd "$runtime-pty.node" | tee /tmp/dsh-node-pty-ldd.txt
-            ! grep -q "not found" /tmp/dsh-node-pty-ldd.txt
             /tmp/dsh-sdk/bin/python /work/scripts/smoke-python-runtime.py --scenario sdk-default
           '
 

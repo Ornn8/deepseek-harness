@@ -2,20 +2,17 @@
  * Build the SDK runtime executables and Python node carrier. The fixed
  * `@yao-pkg/pkg --sea` route, deploy flags, and artifact layout are owned by
  * .agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md.
- * The staged closure is symlink-free, whole-tree assets cover Cordis's runtime
- * imports that pkg cannot discover statically, and node-pty ships as a native
- * companion beside each executable.
+ * The staged closure is symlink-free, and whole-tree assets cover Cordis's
+ * runtime imports that pkg cannot discover statically.
  */
 
 import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { chmod, copyFile, cp, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 
 const root = resolve(import.meta.dirname, '..')
-const resolveDependency = createRequire(import.meta.url).resolve
 
 /** The closure manifest whose dependencies define the executable. */
 const DEPLOY_ROOT_PACKAGE = 'dsh-jsonrpc-agent-pkg'
@@ -380,18 +377,12 @@ class SingleExeBuild {
   /**
    * Package one target; SEA mode accepts one target per invocation.
    * @param target - the pkg target triple to build.
-   * @returns the executable and native-companion paths for the target.
+   * @returns the executable path and, on macOS, its helper path.
    */
   async pack(target: Target): Promise<string[]> {
     const product = join(this.outDir, `${OUTPUT_BASENAME}-${target.platform}-${target.arch}`)
-    const nativePty = await this.prepareNativePty(target)
+    await this.prepareNativePty(target)
     if (!this.cli.dryRun) await mkdir(this.outDir, { recursive: true })
-    const ptyCompanion = `${product}-pty.node`
-    if (this.cli.dryRun) {
-      console.log(`build-exe-for-python-sdk: [dry-run] cp ${nativePty} ${ptyCompanion}`)
-    } else {
-      await copyFile(nativePty, ptyCompanion)
-    }
     await this.run(`pkg ${target.spec}`, pnpmBin(), [
       'dlx',
       PKG_SPEC,
@@ -405,7 +396,7 @@ class SingleExeBuild {
     if (!this.cli.dryRun && !existsSync(product)) {
       throw new Error(`build-exe-for-python-sdk: product ${product} is missing after the pkg run; inspect ${this.outDir}.`)
     }
-    if (target.platform !== 'macos') return [product, ptyCompanion]
+    if (target.platform !== 'macos') return [product]
     const spawnHelper = `${product}-spawn-helper`
     const source = join(this.staging, 'node_modules', 'node-pty', 'prebuilds', `darwin-${target.arch}`, 'spawn-helper')
     if (this.cli.dryRun) {
@@ -414,7 +405,7 @@ class SingleExeBuild {
       await copyFile(source, spawnHelper)
       await chmod(spawnHelper, 0o755)
     }
-    return [product, ptyCompanion, spawnHelper]
+    return [product, spawnHelper]
   }
 
   /**
@@ -422,32 +413,16 @@ class SingleExeBuild {
    * build it from source, but legacy deploy omits that side-effect directory.
    * @param target - the pkg target whose native addon is being staged.
    */
-  private async prepareNativePty(target: Target): Promise<string> {
+  private async prepareNativePty(target: Target): Promise<void> {
     const stagedBuild = join(this.staging, 'node_modules', 'node-pty', 'build')
     if (this.cli.dryRun) console.log(`build-exe-for-python-sdk: [dry-run] rm -rf ${stagedBuild}`)
     else await rm(stagedBuild, { recursive: true, force: true })
-    if (target.platform !== 'linux') {
-      const prebuild = join(
-        this.staging,
-        'node_modules',
-        'node-pty',
-        'prebuilds',
-        `darwin-${target.arch}`,
-        'pty.node',
-      )
-      if (!this.cli.dryRun && !existsSync(prebuild)) {
-        throw new Error(`build-exe-for-python-sdk: target node-pty addon ${prebuild} is missing.`)
-      }
-      return prebuild
-    }
-    const nodePtyPackage = resolveDependency('node-pty/package.json', {
-      paths: [join(root, 'packages', 'subprocess', 'subprocess-local')],
-    })
-    const source = join(dirname(nodePtyPackage), 'build', 'Release', 'pty.node')
+    if (target.platform !== 'linux') return
+    const source = join(root, 'packages', 'subprocess', 'subprocess-local', 'node_modules', 'node-pty', 'build', 'Release', 'pty.node')
     const destination = join(stagedBuild, 'Release', 'pty.node')
     if (this.cli.dryRun) {
       console.log(`build-exe-for-python-sdk: [dry-run] cp ${source} ${destination}`)
-      return destination
+      return
     }
     const host = Target.host()
     if (target.platform !== host.platform || target.arch !== host.arch) {
@@ -458,7 +433,6 @@ class SingleExeBuild {
     }
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(source, destination)
-    return destination
   }
 
   /**

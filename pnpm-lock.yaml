@@ -9,7 +9,7 @@ overrides:
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
 patchedDependencies:
-  node-pty@1.1.0: a4d82b50b4e51420553f53f2c301f8ea35ce717a6e677e8155ac33d6e2841817
+  node-pty@1.1.0: 7a0c04f1f49d798a9ffe2f7f414c01064a44ca2489772d0c3e1235ab336755e6
 
 importers:
 
@@ -7494,7 +7494,7 @@ importers:
     dependencies:
       node-pty:
         specifier: ^1.1.0
-        version: 1.1.0(patch_hash=a4d82b50b4e51420553f53f2c301f8ea35ce717a6e677e8155ac33d6e2841817)
+        version: 1.1.0(patch_hash=7a0c04f1f49d798a9ffe2f7f414c01064a44ca2489772d0c3e1235ab336755e6)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -18588,7 +18588,7 @@ snapshots:
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
 
-  node-pty@1.1.0(patch_hash=a4d82b50b4e51420553f53f2c301f8ea35ce717a6e677e8155ac33d6e2841817):
+  node-pty@1.1.0(patch_hash=7a0c04f1f49d798a9ffe2f7f414c01064a44ca2489772d0c3e1235ab336755e6):
     dependencies:
       node-addon-api: 7.1.1
 

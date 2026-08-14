@@ -91,9 +91,7 @@ def test_stage_runtime_copies_platform_payload(
     executable = tmp_path / f"dsh-jsonrpc-agent-pkg-{target}"
     executable.write_bytes(b"runtime")
     executable.chmod(0o755)
-    addon = Path(f"{executable}-pty.node")
-    addon.write_bytes(b"addon")
-    expected = {executable.name: b"runtime", addon.name: b"addon"}
+    expected = {executable.name: b"runtime"}
     if with_helper:
         spawn_helper = Path(f"{executable}-spawn-helper")
         spawn_helper.write_bytes(b"helper")
@@ -115,14 +113,3 @@ def test_stage_runtime_copies_platform_payload(
     assert (destination / "THIRD_PARTY_NOTICES.md").read_bytes() == (
         ROOT / "THIRD_PARTY_NOTICES.md"
     ).read_bytes()
-
-
-def test_stage_runtime_requires_native_addon(tmp_path: Path) -> None:
-    executable = tmp_path / "dsh-jsonrpc-agent-pkg-linux-x64"
-    executable.write_bytes(b"runtime")
-    executable.chmod(0o755)
-
-    with pytest.raises(FileNotFoundError, match="pty.node"):
-        build_python_release.stage_runtime(
-            tmp_path / "staging", "1.2.3", executable, executable.name
-        )

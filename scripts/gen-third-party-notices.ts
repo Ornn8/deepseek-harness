@@ -96,7 +96,7 @@ const BUILD_TIME_TOOLS = [
     name: '@yao-pkg/pkg',
     license: 'MIT',
     repo: 'https://github.com/yao-pkg/pkg',
-    role: 'invoked by `scripts/build-exe-for-python-sdk.ts` to assemble the packaged SDK runtime executable',
+    role: 'invoked by `scripts/build-exe-for-python-sdk.ts` to assemble the single-file SDK runtime executable',
     pinSource: 'scripts/build-exe-for-python-sdk.ts',
   },
 ]
