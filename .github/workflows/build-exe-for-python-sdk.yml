@@ -196,7 +196,7 @@ jobs:
             *) echo "::error::Unsupported Linux runner architecture $RUNNER_ARCH"; exit 1 ;;
           esac
           addon_dir="$(realpath packages/subprocess/subprocess-local/node_modules/node-pty)"
-          npm_config_build_from_source=true pnpm --dir "$addon_dir" run install
+          npm_config_build_from_source=true npm --prefix "$addon_dir" run install
           addon="$addon_dir/build/Release/pty.node"
           [ -f "$addon_dir/build/Makefile" ] || {
             echo "::error::node-pty install did not generate $addon_dir/build/Makefile"

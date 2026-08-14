@@ -346,7 +346,8 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
-    expect(manylinuxAddon.run).toContain('npm_config_build_from_source=true pnpm --dir "$addon_dir" run install')
+    expect(manylinuxAddon.run).toContain('npm_config_build_from_source=true npm --prefix "$addon_dir" run install')
+    expect(manylinuxAddon.run).not.toContain('pnpm --dir "$addon_dir"')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
     expect(JSON.stringify(workflow)).toContain('--config.node-linker=hoisted')
@@ -395,7 +396,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = '1a020a360d68bd769a06173aa4e89b165e4c7a79'
+  const controllerSha = 'a6055e724fa9b66f0b84b67cd66faf5102a9545a'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
@@ -464,7 +465,10 @@ describe('Agent automation workflows', () => {
     expect(rework.on).not.toHaveProperty('pull_request')
     expect(rework.on).not.toHaveProperty('pull_request_review')
     expect(rework.on).not.toHaveProperty('pull_request_review_comment')
-    expect(workflowEvent(ciRepair, 'workflow_run')).toEqual({ types: ['completed'] })
+    expect(workflowEvent(ciRepair, 'workflow_run')).toEqual({
+      workflows: ['CI'],
+      types: ['completed'],
+    })
     expect(workflowJob(ciRepair, 'dsh-ci-repair').if).toContain('vars.DSH_AUTOMATION_CI_WORKFLOW')
     expect(workflowJob(ciRepair, 'dsh-ci-repair').if).toContain("github.event.workflow_run.conclusion == 'failure'")
     expect(workflowJob(ciRepair, 'dsh-ci-repair').with).toHaveProperty(
@@ -474,7 +478,10 @@ describe('Agent automation workflows', () => {
       'ci_workflow_name', '${{ vars.DSH_AUTOMATION_CI_WORKFLOW }}',
     )
     expect(workflowEvent(landing, 'repository_dispatch')).toEqual({ types: ['dsh-land'] })
-    expect(workflowEvent(landing, 'workflow_run')).toEqual({ types: ['completed'] })
+    expect(workflowEvent(landing, 'workflow_run')).toEqual({
+      workflows: ['CI'],
+      types: ['completed'],
+    })
     expect(workflowEvent(recovery, 'workflow_run')).toEqual({
       workflows: ['Agent Issues', 'Agent PR Rework', 'Agent PR Review'],
       types: ['completed'],
