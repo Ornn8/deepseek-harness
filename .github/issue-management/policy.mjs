@@ -56,12 +56,62 @@ const IMPLEMENTATION_PULL_REQUEST_ACTIONS = new Set([
   'unlabeled',
 ])
 
-for (const status of ['In progress', 'In review']) {
-  if (!ACTIVE_STATUS_ORDER.includes(status)) throw new Error(`config.statuses 缺少 ${status}`)
+/**
+ * Validate repository configuration, failing loud on incoherent capability declarations.
+ * @param {Record<string, unknown>} configValue Config.
+ * @returns {void} Throws on the first invalid field.
+ */
+export function validateConfig(configValue = config) {
+  if (
+    configValue.projectNumber !== undefined ||
+    configValue.projectTitle !== undefined ||
+    configValue.priorityField !== undefined
+  ) {
+    throw new Error('config 使用旧版扁平字段，请迁移到 project 与 issueFields 能力声明')
+  }
+  const active = configValue.statuses.filter((status) => !TERMINAL_STATUSES.has(status))
+  for (const status of ['In progress', 'In review']) {
+    if (!active.includes(status)) throw new Error(`config.statuses 缺少 ${status}`)
+  }
+  if (typeof configValue.lifecycleActor !== 'string' || !configValue.lifecycleActor) {
+    throw new Error('config.lifecycleActor 未设置')
+  }
+  const project = configValue.project ?? {}
+  if (project.enabled === true && (!Number.isInteger(project.number) || project.number < 1)) {
+    throw new Error('config.project.enabled 为 true 时必须设置 project.number')
+  }
+  if (project.enabled === true && (typeof project.title !== 'string' || !project.title)) {
+    throw new Error('config.project.enabled 为 true 时必须设置 project.title')
+  }
+  const issueFields = configValue.issueFields ?? {}
+  if (
+    issueFields.enabled === true &&
+    (typeof issueFields.priorityField !== 'string' || !issueFields.priorityField)
+  ) {
+    throw new Error('config.issueFields.enabled 为 true 时必须设置 issueFields.priorityField')
+  }
 }
-if (typeof config.lifecycleActor !== 'string' || !config.lifecycleActor) {
-  throw new Error('config.lifecycleActor 未设置')
+
+/**
+ * Resolve the policy capabilities this repository declares. ProjectV2 and
+ * organization Issue Fields are organization-only GitHub features: the REST
+ * `issue-field-values` endpoint 404s on personal-account repositories. A
+ * personal-account repository declares them disabled instead of failing every
+ * pull request on unsupported metadata.
+ * @param {{project?: {enabled?: boolean}, issueFields?: {enabled?: boolean}}} configValue Config.
+ * @returns {{project: boolean, issueFields: boolean}} Enabled capabilities.
+ */
+export function policyCapabilities(configValue = config) {
+  return {
+    project: configValue.project?.enabled === true,
+    issueFields: configValue.issueFields?.enabled === true,
+  }
 }
+
+validateConfig()
+const capabilities = policyCapabilities()
+const projectSettings = config.project ?? {}
+const issueFieldSettings = config.issueFields ?? {}
 
 /**
  * Return Markdown outside balanced details elements.
@@ -289,9 +339,13 @@ export function retainIssueReferences(references, issues) {
 /**
  * Validate one Issue with its Project status.
  * @param {{title: string, body: string, assignees: string[], labels: string[], type: string|null, priority: string|null, status: string|null, state: string, stateReason: string|null}} issue Issue snapshot.
+ * @param {{project?: boolean, issueFields?: boolean}} [options] Enabled capabilities; defaults to the repository configuration.
  * @returns {string[]} Validation errors.
  */
-export function validateIssue(issue) {
+export function validateIssue(
+  issue,
+  { project = capabilities.project, issueFields = capabilities.issueFields } = {},
+) {
   const errors = validateBody(issue)
   const status = issue.status
   const invalidLabels = issue.labels.filter(
@@ -309,22 +363,28 @@ export function validateIssue(issue) {
   ) {
     errors.push('Issue 标题不得带 Type、Priority、Status、area 或 Owner 前缀')
   }
-  if (!TYPES.has(issue.type ?? '')) errors.push('Type 必须是五种原生英文 Type 之一')
-  if (!status || !config.statuses.includes(status)) errors.push('Issue 必须在 Project 中且具有合法 Status')
-  if (issue.priority !== null && !PRIORITIES.includes(issue.priority.toLowerCase())) {
-    errors.push('Priority 必须为空或为 P0–P3')
+  if (issueFields) {
+    if (!TYPES.has(issue.type ?? '')) errors.push('Type 必须是五种原生英文 Type 之一')
+    if (issue.priority !== null && !PRIORITIES.includes(issue.priority.toLowerCase())) {
+      errors.push('Priority 必须为空或为 P0–P3')
+    }
   }
-  if (status === 'Done' && (issue.state !== 'closed' || issue.stateReason !== 'completed')) {
-    errors.push('Done 必须对应 Completed 关闭原因')
-  }
-  if (
-    status === 'No action' &&
-    (issue.state !== 'closed' || issue.stateReason !== 'not_planned')
-  ) {
-    errors.push('No action 必须对应 Not planned 关闭原因')
-  }
-  if (!['Done', 'No action'].includes(status ?? '') && issue.state !== 'open') {
-    errors.push(`${status} 必须对应开放 Issue`)
+  if (project) {
+    if (!status || !config.statuses.includes(status)) {
+      errors.push('Issue 必须在 Project 中且具有合法 Status')
+    }
+    if (status === 'Done' && (issue.state !== 'closed' || issue.stateReason !== 'completed')) {
+      errors.push('Done 必须对应 Completed 关闭原因')
+    }
+    if (
+      status === 'No action' &&
+      (issue.state !== 'closed' || issue.stateReason !== 'not_planned')
+    ) {
+      errors.push('No action 必须对应 Not planned 关闭原因')
+    }
+    if (!['Done', 'No action'].includes(status ?? '') && issue.state !== 'open') {
+      errors.push(`${status} 必须对应开放 Issue`)
+    }
   }
   return errors
 }
@@ -421,13 +481,29 @@ async function graphql(query, variables) {
   return result.data
 }
 
-async function issueSnapshot(number, status = undefined) {
+/**
+ * Snapshot one Issue, reading organization-only metadata only when declared.
+ * @param {number} number Issue number.
+ * @param {string|null} [status] Known Project status; defaults to a live lookup when the Project capability is enabled.
+ * @param {{project?: boolean, issueFields?: boolean}} [options] Enabled capabilities; defaults to the repository configuration.
+ * @returns {Promise<object|null>} Issue snapshot, or null for pull requests.
+ */
+export async function issueSnapshot(number, status = undefined, options = {}) {
+  const {
+    project: projectEnabled = capabilities.project,
+    issueFields: issueFieldsEnabled = capabilities.issueFields,
+  } = options
   const issue = await api(`/repos/${organization}/${repository}/issues/${number}`)
   if (issue.pull_request) return null
-  const values = await api(
-    `/repos/${organization}/${repository}/issues/${number}/issue-field-values?per_page=100`,
-  )
-  const field = (name) => values.find((value) => value.issue_field_name === name)
+  let priority = null
+  if (issueFieldsEnabled) {
+    const values = await api(
+      `/repos/${organization}/${repository}/issues/${number}/issue-field-values?per_page=100`,
+    )
+    priority =
+      values.find((value) => value.issue_field_name === issueFieldSettings.priorityField)
+        ?.single_select_option?.name ?? null
+  }
   return {
     number,
     nodeId: issue.node_id,
@@ -436,23 +512,41 @@ async function issueSnapshot(number, status = undefined) {
     assignees: issue.assignees.map((assignee) => assignee.login),
     labels: issue.labels.map((label) => label.name),
     type: issue.type?.name ?? null,
-    priority: field(config.priorityField)?.single_select_option?.name ?? null,
-    status: status === undefined ? await projectStatus(number) : status,
+    priority,
+    status: status === undefined ? (projectEnabled ? await projectStatus(number) : null) : status,
     state: issue.state,
     stateReason: issue.state_reason ?? null,
   }
 }
 
-async function projectContext(number, includeStatusActor = false) {
+/**
+ * Resolve the GraphQL owner root for the running repository. Personal-account
+ * repositories expose ProjectV2 under `user`, organizations under
+ * `organization`; the REST owner type is authoritative for the running repo.
+ * @returns {Promise<'organization'|'user'>} GraphQL owner root.
+ */
+async function ownerRoot() {
+  const repo = await api(`/repos/${organization}/${repository}`)
+  return repo.owner.type === 'User' ? 'user' : 'organization'
+}
+
+/**
+ * Load the configured ProjectV2 and the Issue's placement inside it.
+ * @param {number} number Issue number.
+ * @param {boolean} [includeStatusActor] Whether to read the latest status-change actor.
+ * @returns {Promise<{project: object, issue: object, statusField: object, item: object|null, statusActor: string|null}>} Project context.
+ */
+export async function projectContext(number, includeStatusActor = false) {
+  const root = await ownerRoot()
   const data = await graphql(
     `query(
-      $organization: String!
+      $owner: String!
       $repository: String!
       $number: Int!
       $project: Int!
       $includeStatusActor: Boolean!
     ) {
-      organization(login: $organization) {
+      ${root}(login: $owner) {
         projectV2(number: $project) {
           id
           title
@@ -463,7 +557,7 @@ async function projectContext(number, includeStatusActor = false) {
           }
         }
       }
-      repository(owner: $organization, name: $repository) {
+      repository(owner: $owner, name: $repository) {
         issue(number: $number) {
           id
           timelineItems(last: 100, itemTypes: [PROJECT_V2_ITEM_STATUS_CHANGED_EVENT])
@@ -489,16 +583,18 @@ async function projectContext(number, includeStatusActor = false) {
       }
     }`,
     {
-      organization: organization,
-      repository: repository,
+      owner: organization,
+      repository,
       number,
-      project: config.projectNumber,
+      project: projectSettings.number,
       includeStatusActor,
     },
   )
-  const project = data.organization?.projectV2
+  const project = data[root]?.projectV2
   const issue = data.repository?.issue
-  if (!project || project.title !== config.projectTitle) throw new Error('目标 Project 不存在或标题不匹配')
+  if (!project || project.title !== projectSettings.title) {
+    throw new Error('目标 Project 不存在或标题不匹配')
+  }
   if (!issue) throw new Error(`#${number} 不存在`)
   const statusField = project.fields.nodes.find((field) => field?.name === 'Status')
   if (!statusField) throw new Error('Project 缺少 Status 字段')
@@ -668,23 +764,32 @@ async function runPullRequestCheck(event) {
   )
 }
 
-async function runLifecycle(eventName, event) {
+/**
+ * Handle one repository event against resolving Issues and the audit trail.
+ * @param {string} eventName GitHub event name.
+ * @param {object} event GitHub event payload.
+ * @returns {Promise<void>} Resolves when the event is fully handled.
+ */
+export async function runLifecycle(eventName, event) {
   if (eventName === 'issues') {
     const number = event.issue.number
-    if (event.action === 'opened') await setStatus(number, 'Inbox')
-    if (event.action === 'closed') {
-      const target = event.issue.state_reason === 'not_planned' ? 'No action' : 'Done'
-      await setStatus(number, target)
+    if (capabilities.project) {
+      if (event.action === 'opened') await setStatus(number, 'Inbox')
+      if (event.action === 'closed') {
+        const target = event.issue.state_reason === 'not_planned' ? 'No action' : 'Done'
+        await setStatus(number, target)
+      }
+      if (event.action === 'reopened') {
+        await setStatus(number, 'Inbox')
+      }
+      await ensureProjectItem(number)
     }
-    if (event.action === 'reopened') {
-      await setStatus(number, 'Inbox')
-    }
-    await ensureProjectItem(number)
     await auditIssue(number)
     return
   }
 
   if (eventName === 'pull_request_target') {
+    if (!capabilities.project) return
     const command = resolvingIssueStatusCommand(eventName, event)
     if (!command) return
     const pull = await lifecyclePullRequestSnapshot(event.pull_request.number)
