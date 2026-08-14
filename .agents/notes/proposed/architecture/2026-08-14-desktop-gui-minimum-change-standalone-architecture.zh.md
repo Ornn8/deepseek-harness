@@ -35,9 +35,9 @@ DSH_SNAPSHOT=replay pnpm run test:web
 
 `test:web` 先重建 `apps/web` 的 dist，再运行浏览器冒烟对（真实宿主用例在无 `DEEPSEEK_API_KEY` 时自动跳过）以及无密钥重放的 e2e 场景。黄金样本枚举了后续工作必须匹配而非重新设计的状态：会话/工作区框架、对话与输入框、计划与目标条、后台任务、工具与工作流行、设置与插件配置、模型选择、引导与错误状态、消息操作，以及导航窗格。它们验证结构、存在性、顺序与文案，但对颜色不敏感，也不携带主题或布局黄金样本——生命周期 e2e 明确说明了这一局限（[lifecycle-chrome.e2e.ts](../../../../apps/web/tests/lifecycle-chrome.e2e.ts)）。
 
-渲染基线记录上述同一批状态的已提交截图：在 WebUI 所测试的 Chromium 主版本上、以固定视口录制，并在每张截图旁注明录制条件（视口尺寸、平台、主题）；后续工作必须匹配这些截图，而非重新设计。真实宿主冒烟已经写出整页截图作为对比证据（[smoke-real.e2e.ts](../../../../apps/web/tests/smoke-real.e2e.ts)）；基线以无密钥方式记录同类截图。
+渲染基线是上述状态的已提交像素截图，通过重放通道以无密钥方式录制，由受门控的录制器 `apps/web/tests/visual-baseline.e2e.ts` 生成（`DSH_VISUAL_BASELINE=record pnpm run test:web:built -- -t visual-baseline`）：[`apps/web/tests/snapshots/visual-baseline/`](../../../../apps/web/tests/snapshots/visual-baseline/) 存放截图与 [`recording.md`](../../../../apps/web/tests/snapshots/visual-baseline/recording.md) 录制条件（视口 1680x1000、语言、主题、平台、Chromium 版本、录制日期）。录制器驱动与 aria 通道相同的种子夹具，因此每个状态都无需密钥即可复现；外壳状态跟随平台当前的外壳工具（win32 为 `tool-pwsh`，其他平台为 `tool-bash`），这也是元数据记录平台的原因。后续工作必须匹配这些截图，而非重新设计；像素一致性仅在所记录的录制条件下成立，桌面实现阶段会在其自身平台上重新录制。
 
-静态美术资源另有自己的清单检查：打包后的桌面应用必须让每项上游视觉/静态资源保持存在且可解析——[`apps/web/public/**`](../../../../apps/web/public/)（`favicon.svg`、`manifest.webmanifest`）以及 Vite 发射进 dist 的已导入 SVG/图片/字体资源（KaTeX 字体的 `assets/fonts/*`，外加图标与图片）。基线记录该清单；后续桌面交付物证明每一项都能在打包应用中解析。
+静态美术资源另有自己的清单检查：打包后的桌面应用必须让每项上游视觉/静态资源保持存在且可解析。已提交的 [`static-assets.md`](../../../../apps/web/tests/snapshots/visual-baseline/static-assets.md) 清单列出 [`apps/web/public/**`](../../../../apps/web/public/)（`favicon.svg`、`manifest.webmanifest`）以及构建发射进 dist 的每一项资源（KaTeX 字体、语法高亮语言分块、CSS 与 JS 包）；后续桌面交付物证明每一项都能在打包应用中解析。
 
 独立 GUI 必须渲染相同的转录、匹配相同的截图并解析相同的资源；后续桌面交付物通过对着窗口重放相同夹具来一并固化这三者。
 
@@ -85,7 +85,7 @@ DSH_SNAPSHOT=replay pnpm run test:web
 
 ## Acceptance criteria
 
-- 独立窗口渲染官方 WebUI，与浏览器面无视觉或行为差异，以相同的无密钥重放黄金样本、已提交的截图基线以及静态资源解析检查为证据。
+- 独立窗口渲染官方 WebUI，与浏览器面无视觉或行为差异，以相同的无密钥重放黄金样本、已提交的截图基线（截图加录制条件）以及静态资源解析检查为证据。
 - harness 语义不变：后端、运行时、API、RPC、会话数据、提示词、智能体、工具、插件、技能、模型、预设、权限或配置的行为与 `dsh --profile web` 无任何差异。
 - 外壳纯属增量；所有 `packages/client/**` 与 `apps/web` UI 源文件以及 `/api` 线契约保持逐字节或语义不变。
 - 窗口达到与浏览器相同的 `host.describe` 就绪应答，并挂载相同的客户端插件名录。
