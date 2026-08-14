@@ -30,7 +30,7 @@ Status: implemented
 
 PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制器只接受当前指向仓库默认分支的非草稿 PR，要求精确 base/head PASS 记录和所有实时分支保护上下文均成功，在 squash merge 前立即重复这些检查，否则不改变 PR 即退出。成功的已配置 CI workflow run 会在待定检查完成后重试落地。
 
-每次向仓库默认分支推送后，协调器先更新落后的同仓库 PR，再只为没有可信精确版本对证据的当前版本分发审核。GitHub 会在自身作业 token 修改标签后抑制普通工作流递归，因此 backlog、协调和有界恢复使用显式 `repository_dispatch` 事件；受保护默认分支上的 listener 与固定的可复用控制器会在调用模型前重新核验实时 Issue 或精确 PR 版本对。手动健康工作流在各自 runner 上分别检查每个已配置 worker，并检查固定控制器与 GitHub 访问，全程不调用模型。
+每次向仓库默认分支推送后，协调器都会把同仓库 PR 记录的 base commit 与当前默认分支 commit 比较，无论 GitHub 的临时 mergeability 状态如何，都会先更新陈旧 base，再只为没有可信精确版本对证据的当前版本分发审核。GitHub 会在自身作业 token 修改标签后抑制普通工作流递归，因此 backlog、协调和有界恢复使用显式 `repository_dispatch` 事件；若一个带 `agent/dsh` 标签的 Issue 既没有关闭它的 PR，也没有终态失败，backlog 可以重新认领它，而工作流并发控制和稳定的 WorkRequest 标识会阻止第二个模型轮次。受保护默认分支上的 listener 与固定的可复用控制器会在调用模型前重新核验实时 Issue 或精确 PR 版本对。手动健康工作流在各自 runner 上分别检查每个已配置 worker，并检查固定控制器与 GitHub 访问，全程不调用模型。
 
 ## Alternatives considered
 
