@@ -25,7 +25,7 @@ jobs:
       || (github.event_name == 'issues'
         && github.event.action == 'labeled'
         && github.event.label.name == 'agent/dsh-failed')
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dispatch-backlog.yml@ab8ec700bee21e09e389849aa3a588ec745def07
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dispatch-backlog.yml@624a3f3739dcfa371d3e25054768ac242cddf699
 
   dsh-issue:
     if: >-
@@ -33,7 +33,7 @@ jobs:
       || (github.event_name == 'issues'
         && github.event.label.name == 'agent/dsh'
         && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@ab8ec700bee21e09e389849aa3a588ec745def07
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@624a3f3739dcfa371d3e25054768ac242cddf699
     with:
       issue_number: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.issue_number || github.event.issue.number }}
       request_id: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.request_id || format('label-{0}-{1}', github.run_id, github.run_attempt) }}
@@ -42,4 +42,4 @@ jobs:
     if: >-
       github.event_name == 'push'
       && github.ref_name == github.event.repository.default_branch
-    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-reviews.yml@ab8ec700bee21e09e389849aa3a588ec745def07
+    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-reviews.yml@624a3f3739dcfa371d3e25054768ac242cddf699
