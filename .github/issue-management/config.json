@@ -1,10 +1,16 @@
 {
   "organization": "deepseek-harness",
   "repository": "deepseek-harness",
-  "projectNumber": 1,
-  "projectTitle": "DSH Issue Management",
+  "project": {
+    "enabled": false,
+    "number": 1,
+    "title": "DSH Issue Management"
+  },
+  "issueFields": {
+    "enabled": false,
+    "priorityField": "Priority"
+  },
   "lifecycleActor": "dsh-issue-management",
-  "priorityField": "Priority",
   "allowUnassignedOwner": true,
   "statuses": [
     "Inbox",

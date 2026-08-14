@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { after, before, mock, test } from 'node:test'
 
 import {
   countVisibleUnits,
+  issueSnapshot,
   nextResolvingIssueStatus,
   parseReferences,
+  policyCapabilities,
+  projectContext,
   retainIssueReferences,
   resolvingIssueStatusCommand,
   requiresPullRequestPolicy,
+  runLifecycle,
   validateBody,
+  validateConfig,
   validateIssue,
   validatePullRequest,
 } from './policy.mjs'
@@ -27,6 +32,11 @@ const legalIssue = {
   state: 'open',
   stateReason: null,
 }
+
+// Capability flags: organization-capable repositories enforce Type, Priority,
+// and Project Status; personal-account repositories skip all three.
+const ORG = { project: true, issueFields: true }
+const PERSONAL = { project: false, issueFields: false }
 
 const canonicalKinds = [
   'kind/feature',
@@ -117,14 +127,14 @@ test('accepts an intended Owner while assignment permission is pending', () => {
 })
 
 test('allows optional metadata in every open Status', () => {
-  assert.deepEqual(validateIssue(legalIssue), [])
+  assert.deepEqual(validateIssue(legalIssue, ORG), [])
   for (const status of ['Inbox', 'Backlog', 'Ready', 'In progress', 'In review']) {
-    assert.deepEqual(validateIssue({ ...legalIssue, status }), [])
+    assert.deepEqual(validateIssue({ ...legalIssue, status }, ORG), [])
   }
 })
 
 test('rejects metadata prefixes in an Issue title', () => {
-  const errors = validateIssue({ ...legalIssue, title: '[Bug] 修复恢复错误' })
+  const errors = validateIssue({ ...legalIssue, title: '[Bug] 修复恢复错误' }, ORG)
   assert.ok(errors.includes('Issue 标题不得带 Type、Priority、Status、area 或 Owner 前缀'))
 })
 
@@ -135,30 +145,33 @@ test('reserves PR kind and legacy labels for pull requests', () => {
     ...legacyLabels,
   ]) {
     assert.ok(
-      validateIssue({ ...legalIssue, labels: [label] }).some((error) =>
+      validateIssue({ ...legalIssue, labels: [label] }, ORG).some((error) =>
         error.startsWith('Issue 不得使用 PR kind 或旧版标签：'),
       ),
       label,
     )
   }
-  assert.deepEqual(validateIssue({ ...legalIssue, labels: ['area/web', 'source/member'] }), [])
+  assert.deepEqual(validateIssue({ ...legalIssue, labels: ['area/web', 'source/member'] }, ORG), [])
 })
 
 test('keeps terminal Status aligned with the native close reason', () => {
   assert.deepEqual(
-    validateIssue({ ...legalIssue, status: 'Done', state: 'closed', stateReason: 'completed' }),
+    validateIssue(
+      { ...legalIssue, status: 'Done', state: 'closed', stateReason: 'completed' },
+      ORG,
+    ),
     [],
   )
   assert.deepEqual(
-    validateIssue({
-      ...legalIssue,
-      status: 'No action',
-      state: 'closed',
-      stateReason: 'not_planned',
-    }),
+    validateIssue(
+      { ...legalIssue, status: 'No action', state: 'closed', stateReason: 'not_planned' },
+      ORG,
+    ),
     [],
   )
-  assert.ok(validateIssue({ ...legalIssue, status: 'Done' }).includes('Done 必须对应 Completed 关闭原因'))
+  assert.ok(
+    validateIssue({ ...legalIssue, status: 'Done' }, ORG).includes('Done 必须对应 Completed 关闭原因'),
+  )
 })
 
 test('separates resolving and informational references', () => {
@@ -402,4 +415,296 @@ test('allows missing Priority only when resolving Issues are also unprioritized'
       '有 Priority 的解决型 PR 要求每个被解决 Issue 都设置 Priority',
     ),
   )
+})
+
+test('personal-account repositories skip organization-only Issue metadata checks', () => {
+  const personalIssue = {
+    ...legalIssue,
+    type: null,
+    priority: null,
+    status: null,
+    state: 'open',
+  }
+  assert.deepEqual(validateIssue(personalIssue, PERSONAL), [])
+  assert.ok(
+    validateIssue({ ...personalIssue, title: '[Bug] 修复恢复错误' }, PERSONAL).includes(
+      'Issue 标题不得带 Type、Priority、Status、area 或 Owner 前缀',
+    ),
+  )
+  assert.ok(
+    validateIssue({ ...personalIssue, labels: ['kind/feature'] }, PERSONAL).some((error) =>
+      error.startsWith('Issue 不得使用 PR kind 或旧版标签：'),
+    ),
+  )
+})
+
+test('organization-capable repositories keep Type, Priority, and Project validation', () => {
+  assert.deepEqual(validateIssue(legalIssue, ORG), [])
+  assert.ok(
+    validateIssue({ ...legalIssue, type: 'Epic' }, ORG).includes('Type 必须是五种原生英文 Type 之一'),
+  )
+  assert.ok(
+    validateIssue({ ...legalIssue, priority: 'P4' }, ORG).includes('Priority 必须为空或为 P0–P3'),
+  )
+  assert.ok(
+    validateIssue({ ...legalIssue, status: null }, ORG).includes(
+      'Issue 必须在 Project 中且具有合法 Status',
+    ),
+  )
+})
+
+test('resolves capabilities from the repository configuration', () => {
+  assert.deepEqual(
+    policyCapabilities({ project: { enabled: true }, issueFields: { enabled: false } }),
+    { project: true, issueFields: false },
+  )
+  assert.deepEqual(policyCapabilities({}), { project: false, issueFields: false })
+  assert.deepEqual(policyCapabilities(), { project: false, issueFields: false })
+})
+
+test('rejects incoherent capability declarations', () => {
+  const base = {
+    lifecycleActor: 'dsh-issue-management',
+    statuses: ['Inbox', 'Backlog', 'Ready', 'In progress', 'In review', 'Done', 'No action'],
+    project: { enabled: true, number: 1, title: 'DSH Issue Management' },
+    issueFields: { enabled: true, priorityField: 'Priority' },
+  }
+  assert.doesNotThrow(() => validateConfig(base))
+  assert.doesNotThrow(() =>
+    validateConfig({
+      ...base,
+      project: { enabled: false },
+      issueFields: { enabled: false },
+    }),
+  )
+  assert.throws(() => validateConfig({ ...base, project: { enabled: true } }), /project\.number/)
+  assert.throws(
+    () => validateConfig({ ...base, project: { enabled: true, number: 1 } }),
+    /project\.title/,
+  )
+  assert.throws(() => validateConfig({ ...base, issueFields: { enabled: true } }), /priorityField/)
+  assert.throws(() => validateConfig({ ...base, statuses: [] }), /config\.statuses/)
+  assert.throws(() => validateConfig({ ...base, lifecycleActor: '' }), /lifecycleActor/)
+  assert.throws(
+    () => validateConfig({ ...base, projectNumber: 1, projectTitle: 'DSH Issue Management' }),
+    /旧版扁平字段/,
+  )
+})
+
+const restIssue = (overrides = {}) => ({
+  number: 2,
+  node_id: 'I_kwDOAAA',
+  title: '完成议题管理校验',
+  body: withDetails('完成议题管理校验。'),
+  assignees: [],
+  labels: [],
+  type: { name: 'Bug' },
+  state: 'open',
+  state_reason: null,
+  ...overrides,
+})
+
+const graphqlData = (root, includeStatusActor = false) => ({
+  [root]: {
+    projectV2: {
+      id: 'PVT_kwDOAAA',
+      title: 'DSH Issue Management',
+      fields: {
+        nodes: [
+          {
+            id: 'field-status',
+            name: 'Status',
+            options: [{ id: 'option-progress', name: 'In progress' }],
+          },
+        ],
+      },
+    },
+  },
+  repository: {
+    issue: {
+      id: 'I_kwDOAAA',
+      timelineItems: includeStatusActor
+        ? {
+            nodes: [
+              {
+                actor: { login: 'dsh-issue-management' },
+                project: { id: 'PVT_kwDOAAA' },
+                status: 'In progress',
+              },
+            ],
+          }
+        : { nodes: [] },
+      projectItems: {
+        nodes: [
+          {
+            id: 'item-1',
+            project: { id: 'PVT_kwDOAAA' },
+            fieldValueByName: { name: 'In progress' },
+          },
+        ],
+      },
+    },
+  },
+})
+
+const jsonResponse = (body, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+
+/**
+ * Stub global fetch with URL-pattern routes and record every request.
+ * @param {{pattern: RegExp, respond: (path: string, init: object) => Response}[]} routes Routes in match order.
+ * @returns {string[]} Requested `METHOD path` pairs.
+ */
+function fetchMock(routes) {
+  const urls = []
+  mock.method(globalThis, 'fetch', async (url, init = {}) => {
+    const path = String(url)
+    urls.push(`${init.method ?? 'GET'} ${path}`)
+    const handler = routes.find((route) => route.pattern.test(path))
+    if (handler) return handler.respond(path, init)
+    return jsonResponse({ message: `unhandled mock route: ${path}` }, 500)
+  })
+  return urls
+}
+
+test('skips organization Issue Fields and Project lookups on a personal-account repository', async () => {
+  const urls = fetchMock([
+    {
+      pattern: /\/repos\/[^/]+\/[^/]+\/issues\/2$/,
+      respond: () => jsonResponse(restIssue({ type: null })),
+    },
+  ])
+  try {
+    const snapshot = await issueSnapshot(2, undefined, PERSONAL)
+    assert.equal(snapshot.type, null)
+    assert.equal(snapshot.priority, null)
+    assert.equal(snapshot.status, null)
+    assert.equal(urls.length, 1)
+    assert.ok(urls.every((url) => !url.includes('issue-field-values')))
+  } finally {
+    mock.restoreAll()
+  }
+})
+
+test('reads Issue Fields and Project status on an organization-capable repository', async () => {
+  const urls = fetchMock([
+    {
+      pattern: /\/repos\/[^/]+\/[^/]+\/issues\/2$/,
+      respond: () => jsonResponse(restIssue()),
+    },
+    {
+      pattern: /\/issues\/2\/issue-field-values/,
+      respond: () =>
+        jsonResponse([{ issue_field_name: 'Priority', single_select_option: { name: 'P1' } }]),
+    },
+    {
+      pattern: /\/repos\/[^/]+\/[^/]+$/,
+      respond: () => jsonResponse({ owner: { type: 'Organization' } }),
+    },
+    {
+      pattern: /\/graphql$/,
+      respond: (_path, init) => {
+        const body = JSON.parse(String(init.body))
+        return jsonResponse({
+          data: graphqlData('organization', body.variables.includeStatusActor),
+        })
+      },
+    },
+  ])
+  try {
+    const snapshot = await issueSnapshot(2, undefined, ORG)
+    assert.equal(snapshot.type, 'Bug')
+    assert.equal(snapshot.priority, 'P1')
+    assert.equal(snapshot.status, 'In progress')
+    assert.ok(urls.some((url) => url.includes('/issue-field-values')))
+  } finally {
+    mock.restoreAll()
+  }
+})
+
+test('queries the user GraphQL root for a personal-account repository', async () => {
+  const bodies = []
+  fetchMock([
+    {
+      pattern: /\/repos\/[^/]+\/[^/]+$/,
+      respond: () => jsonResponse({ owner: { type: 'User' } }),
+    },
+    {
+      pattern: /\/graphql$/,
+      respond: (_path, init) => {
+        bodies.push(String(init.body))
+        return jsonResponse({ data: graphqlData('user') })
+      },
+    },
+  ])
+  try {
+    const context = await projectContext(2)
+    assert.equal(context.project.title, 'DSH Issue Management')
+    assert.equal(context.statusField.name, 'Status')
+    assert.equal(bodies.length, 1)
+    assert.ok(bodies[0].includes('user(login: $owner)'))
+    assert.ok(!bodies[0].includes('organization(login:'))
+  } finally {
+    mock.restoreAll()
+  }
+})
+
+test('queries the organization GraphQL root for an organization-owned repository', async () => {
+  const bodies = []
+  fetchMock([
+    {
+      pattern: /\/repos\/[^/]+\/[^/]+$/,
+      respond: () => jsonResponse({ owner: { type: 'Organization' } }),
+    },
+    {
+      pattern: /\/graphql$/,
+      respond: (_path, init) => {
+        bodies.push(String(init.body))
+        return jsonResponse({ data: graphqlData('organization') })
+      },
+    },
+  ])
+  try {
+    const context = await projectContext(2)
+    assert.equal(context.project.title, 'DSH Issue Management')
+    assert.equal(bodies.length, 1)
+    assert.ok(bodies[0].includes('organization(login: $owner)'))
+    assert.ok(!bodies[0].includes('user(login:'))
+  } finally {
+    mock.restoreAll()
+  }
+})
+
+test('lifecycle never touches ProjectV2 or Issue Fields on a personal-account repository', async () => {
+  const urls = fetchMock([
+    {
+      pattern: /\/repos\/[^/]+\/[^/]+\/issues\/24$/,
+      respond: () => jsonResponse(restIssue({ number: 24, type: null })),
+    },
+    {
+      pattern: /\/repos\/[^/]+\/[^/]+\/issues\/24\/comments/,
+      respond: () => jsonResponse([]),
+    },
+  ])
+  try {
+    await runLifecycle('issues', { action: 'opened', issue: { number: 24 } })
+    assert.equal(urls.length, 2)
+    assert.ok(urls.every((url) => url.startsWith('GET ')))
+    assert.ok(urls.every((url) => !url.includes('/graphql')))
+    assert.ok(urls.every((url) => !url.includes('issue-field-values')))
+  } finally {
+    mock.restoreAll()
+  }
+})
+
+before(() => {
+  process.env.GH_TOKEN = 'test-token'
+})
+
+after(() => {
+  mock.restoreAll()
+  delete process.env.GH_TOKEN
 })

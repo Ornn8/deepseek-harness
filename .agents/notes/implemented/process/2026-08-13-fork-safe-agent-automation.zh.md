@@ -21,6 +21,8 @@ Status: implemented
 
 `policy.mjs` 将 `process.env.GITHUB_REPOSITORY`（`owner/repo`）拆分为 `organization` 与 `repository`，并优先于 `config.json` 的默认值使用；本地与测试运行未设置该变量，保持检入的默认值。所有原先内插 `config.organization`/`config.repository` 的 REST/GraphQL 路径现在都内插这两个推导常量。
 
+ProjectV2 与组织级 Issue Fields 是仅限组织的 GitHub 功能：在个人账户仓库上，REST `issue-field-values` 端点返回 404，GraphQL `organization(...)` 根也不存在。因此 `config.json` 显式声明这两项能力（`project.enabled` 与 `issueFields.enabled`），个人账户仓库将二者都设为禁用，而不是让每个 PR 都因不支持的元数据而失败。被禁用的能力完全跳过对应端点，`validateIssue` 也不再检查 Type、Priority 与 Status；解析 Issue 引用与仓库本地标签的校验仍然保留。对已启用的能力，任何 API 错误仍然直接使作业失败，并且 `policy.mjs` 从实时仓库元数据选择 GraphQL 所有者根（个人账户用 `user(...)`，组织用 `organization(...)`），因此具备组织能力的 fork 无需改动代码即可保留完整策略。
+
 `issue-lifecycle.yml` 在作业级 `if` 上加入 `vars.DSH_ISSUE_APP_CLIENT_ID != ''`，使无凭据的仓库（包括本 fork）跳过作业而不是令其失败，并从 `github.repository_owner` 与 `github.event.repository.name` 推导 App 安装归属，使安装了 App 的 fork 指向自身安装而非上游。
 
 目标仓库用相互独立的工作流负责 Issue 分发、精确版本对 PR 审核、可信返工反馈、显式落地和健康检查。每个调用方在 `uses` 中固定可复用工作流 revision；控制器 revision、角色 worker 和 runner 选择由控制器持有，不再作为调用方输入。必需 CI 作业在上游仓库中继续使用 larger runner；在 fork 中则选择标准 GitHub-hosted runner，除非仓库变量显式选择 self-hosted 故障转移池。CI 修复与 CI 触发的落地工作流把所配置的 CI 工作流名称声明为字面量 `workflow_run.workflows` 订阅，使 GitHub 能注册这些 listener，再在分发前把收到的名称与 `DSH_AUTOMATION_CI_WORKFLOW` 比对。包括项目生命周期和 Issue policy 在内的所有特权 PR listener 都使用 `pull_request_target` 并签出默认分支 policy，因此 PR 在进入默认分支前不能替换特权工作流定义。review-submitted 事件不再作为特权输入；自动化 BLOCK 标签只是精确审核 CheckRun 与不可变返工 WorkRequest 的可见投影。
@@ -45,9 +47,9 @@ PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制�
 
 ## Consequences
 
-在没有 App 凭据、也没有匹配 issue-management Project 的 fork 上，policy 与 lifecycle 检查现在也能通过。`policy.mjs` 的推导不改变上游行为：在那里 `GITHUB_REPOSITORY` 就等于所配置的坐标，Project 查找仍指向拥有该 Project 的组织。
+policy 与 lifecycle 检查现在也能在本个人账户 fork 上通过，其 `config.json` 将两项仅限组织的能力都声明为禁用；在那里，解析 Issue 引用与仓库本地标签仍是强制执行的策略面。能力开关不改变上游行为：`GITHUB_REPOSITORY` 等于所配置的坐标，`project.enabled` 与 `issueFields.enabled` 保持 `true`，Project 查找仍通过 `organization(...)` 根指向拥有该 Project 的组织。
 
-若某个 fork 日后安装了 issue-management App 并希望获得 lifecycle 状态更新，仍需提供匹配的 ProjectV2（`config.json` 仍写死上游的 Project 编号与标题）以及两样 App 凭据；本次工作流级改动只是让凭据缺失不再致命、让 App 安装归属自寻，并不会为 fork 配置 Project。
+若某个 fork 日后安装了 issue-management App 并希望获得 lifecycle 状态更新，需将 `project.enabled` 设为 `true` 并提供匹配的 ProjectV2 编号与标题（仓库使用组织 Issue Fields 时还需将 `issueFields.enabled` 设为 `true` 并配置 `priorityField`），以及两样 App 凭据；能力开关与工作流级改动只是让凭据缺失不再致命、让 App 安装归属自寻，并不会为 fork 配置 Project。
 
 目标仓库现在包含更多工作流入口文件，但其逻辑仍位于专用自动化仓库，固定 revision 也让已部署控制器可审计。标签继续作为操作者可见的投影，而不是事件传输或批准证据；评论包含精确版本对和可见的 DSH 或 Codex 任务标识，足以监管一次运行。CI 失败返工完全由事件驱动，检查为绿色时不会产生任何模型活动。
 
