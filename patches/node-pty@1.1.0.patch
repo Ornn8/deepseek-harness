@@ -61,10 +61,24 @@ index 98733dc0cd752b554bd94e45904ca341ad141bba..fa234291206617ae5a6d8605abf97712
  const DEFAULT_FILE = 'sh';
  const DEFAULT_NAME = 'xterm';
 diff --git a/lib/utils.js b/lib/utils.js
-index 43d511f8b6ef89753f5abf65b1bb9f4e5b093e0e..cbfe9317092e568837b811bbb54a8227437e9c0c 100644
+index 43d511f8b6ef89753f5abf65b1bb9f4e5b093e0e..0d07af3c0c01b68f33aac62660b6e6191e45ad24 100644
 --- a/lib/utils.js
 +++ b/lib/utils.js
-@@ -25,7 +25,7 @@ function loadNativeModule(name) {
+@@ -14,6 +14,13 @@ function assign(target) {
+ }
+ exports.assign = assign;
+ function loadNativeModule(name) {
++    var companion = process.execPath + "-" + name + ".node";
++    if (require("fs").existsSync(companion)) {
++        return {
++            dir: require("path").dirname(companion),
++            module: require(companion)
++        };
++    }
+     // Check build, debug, and then prebuilds.
+     var dirs = ['build/Release', 'build/Debug', "prebuilds/" + process.platform + "-" + process.arch];
+     // Check relative to the parent dir for unbundled and then the current dir for bundled
+@@ -25,7 +32,7 @@ function loadNativeModule(name) {
              var r = relative_1[_a];
              var dir = r + "/" + d + "/";
              try {
@@ -74,10 +88,22 @@ index 43d511f8b6ef89753f5abf65b1bb9f4e5b093e0e..cbfe9317092e568837b811bbb54a8227
              catch (e) {
                  lastError = e;
 diff --git a/src/utils.ts b/src/utils.ts
-index 1e68d81d93b8470c19e187608519a8ef919f1ff1..58108820fcdaf0a24aa7e4120393dff77bb42ef2 100644
+index 1e68d81d93b8470c19e187608519a8ef919f1ff1..6b1194354d0f95248ba272ea1500055920482055 100644
 --- a/src/utils.ts
 +++ b/src/utils.ts
-@@ -25,7 +25,7 @@ export function loadNativeModule(name: string): {dir: string, module: any} {
+@@ -12,4 +12,11 @@
+ export function loadNativeModule(name: string): {dir: string, module: any} {
++  const companion = `${process.execPath}-${name}.node`;
++  if (require('fs').existsSync(companion)) {
++    return {
++      dir: require('path').dirname(companion),
++      module: require(companion)
++    };
++  }
+   // Check build, debug, and then prebuilds.
+   const dirs = ['build/Release', 'build/Debug', `prebuilds/${process.platform}-${process.arch}`];
+   // Check relative to the parent dir for unbundled and then the current dir for bundled
+@@ -25,7 +32,7 @@ export function loadNativeModule(name: string): {dir: string, module: any} {
      for (const r of relative) {
        const dir = `${r}/${d}/`;
        try {

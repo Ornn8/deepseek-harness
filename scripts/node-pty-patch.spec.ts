@@ -5,14 +5,14 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(import.meta.dirname, '..')
 
 describe('node-pty package patch', () => {
-  it('keeps native addon lookup compatible with exact-key package filesystems', () => {
+  it('loads the packaged native addon from an executable companion', () => {
     const patch = readFileSync(resolve(root, 'patches/node-pty@1.1.0.patch'), 'utf8')
     const builder = readFileSync(resolve(root, 'scripts/build-exe-for-python-sdk.ts'), 'utf8')
 
-    expect(patch).toContain('module: require(dir + name + ".node")')
-    expect(patch).toContain('module: require(`${dir}${name}.node`)')
-    expect(patch).toContain('-                return { dir: dir, module: require(dir + "/" + name + ".node") };')
-    expect(patch).toContain('-        return { dir, module: require(`${dir}/${name}.node`) };')
-    expect(builder).toContain("'node_modules/node-pty/build/Release/pty.node'")
+    expect(patch).toContain('var companion = process.execPath + "-" + name + ".node";')
+    expect(patch).toContain('const companion = `${process.execPath}-${name}.node`;')
+    expect(patch).toContain('module: require(companion)')
+    expect(builder).toContain('const ptyCompanion = `${product}-pty.node`')
+    expect(builder).toContain('await copyFile(nativePty, ptyCompanion)')
   })
 })

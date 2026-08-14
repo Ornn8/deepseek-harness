@@ -2,8 +2,9 @@
  * Build the SDK runtime executables and Python node carrier. The fixed
  * `@yao-pkg/pkg --sea` route, deploy flags, and artifact layout are owned by
  * .agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md.
- * The staged closure is symlink-free, and whole-tree assets cover Cordis's
- * runtime imports that pkg cannot discover statically.
+ * The staged closure is symlink-free, whole-tree assets cover Cordis's runtime
+ * imports that pkg cannot discover statically, and node-pty ships as a native
+ * companion beside each executable.
  */
 
 import { spawn } from 'node:child_process'
@@ -40,7 +41,6 @@ const DEPLOY_ONLY_DOCS = ['README.md', 'README.zh.md', 'README.i18n.yaml']
  */
 const ASSET_GLOBS = [
   'package.json',
-  'node_modules/node-pty/build/Release/pty.node',
   'node_modules/**/*.js',
   'node_modules/**/*.cjs',
   'node_modules/**/*.mjs',
@@ -378,11 +378,11 @@ class SingleExeBuild {
   /**
    * Package one target; SEA mode accepts one target per invocation.
    * @param target - the pkg target triple to build.
-   * @returns the executable path and, on macOS, its helper path.
+   * @returns the executable and native-companion paths for the target.
    */
   async pack(target: Target): Promise<string[]> {
     const product = join(this.outDir, `${OUTPUT_BASENAME}-${target.platform}-${target.arch}`)
-    await this.prepareNativePty(target)
+    const nativePty = await this.prepareNativePty(target)
     if (!this.cli.dryRun) await mkdir(this.outDir, { recursive: true })
     await this.run(`pkg ${target.spec}`, pnpmBin(), [
       'dlx',
@@ -397,7 +397,13 @@ class SingleExeBuild {
     if (!this.cli.dryRun && !existsSync(product)) {
       throw new Error(`build-exe-for-python-sdk: product ${product} is missing after the pkg run; inspect ${this.outDir}.`)
     }
-    if (target.platform !== 'macos') return [product]
+    const ptyCompanion = `${product}-pty.node`
+    if (this.cli.dryRun) {
+      console.log(`build-exe-for-python-sdk: [dry-run] cp ${nativePty} ${ptyCompanion}`)
+    } else {
+      await copyFile(nativePty, ptyCompanion)
+    }
+    if (target.platform !== 'macos') return [product, ptyCompanion]
     const spawnHelper = `${product}-spawn-helper`
     const source = join(this.staging, 'node_modules', 'node-pty', 'prebuilds', `darwin-${target.arch}`, 'spawn-helper')
     if (this.cli.dryRun) {
@@ -406,7 +412,7 @@ class SingleExeBuild {
       await copyFile(source, spawnHelper)
       await chmod(spawnHelper, 0o755)
     }
-    return [product, spawnHelper]
+    return [product, ptyCompanion, spawnHelper]
   }
 
   /**
@@ -414,16 +420,29 @@ class SingleExeBuild {
    * build it from source, but legacy deploy omits that side-effect directory.
    * @param target - the pkg target whose native addon is being staged.
    */
-  private async prepareNativePty(target: Target): Promise<void> {
+  private async prepareNativePty(target: Target): Promise<string> {
     const stagedBuild = join(this.staging, 'node_modules', 'node-pty', 'build')
     if (this.cli.dryRun) console.log(`build-exe-for-python-sdk: [dry-run] rm -rf ${stagedBuild}`)
     else await rm(stagedBuild, { recursive: true, force: true })
-    if (target.platform !== 'linux') return
+    if (target.platform !== 'linux') {
+      const prebuild = join(
+        this.staging,
+        'node_modules',
+        'node-pty',
+        'prebuilds',
+        `darwin-${target.arch}`,
+        'pty.node',
+      )
+      if (!this.cli.dryRun && !existsSync(prebuild)) {
+        throw new Error(`build-exe-for-python-sdk: target node-pty addon ${prebuild} is missing.`)
+      }
+      return prebuild
+    }
     const source = join(root, 'packages', 'subprocess', 'subprocess-local', 'node_modules', 'node-pty', 'build', 'Release', 'pty.node')
     const destination = join(stagedBuild, 'Release', 'pty.node')
     if (this.cli.dryRun) {
       console.log(`build-exe-for-python-sdk: [dry-run] cp ${source} ${destination}`)
-      return
+      return destination
     }
     const host = Target.host()
     if (target.platform !== host.platform || target.arch !== host.arch) {
@@ -434,6 +453,7 @@ class SingleExeBuild {
     }
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(source, destination)
+    return destination
   }
 
   /**

@@ -359,12 +359,14 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(workflow)).not.toContain('NODE_OPTIONS: --preserve-symlinks')
     expect(macosCheck).toMatchObject({ if: "runner.os == 'macOS'" })
     expect(JSON.stringify(macosCheck)).toContain('scripts/check-macos-deployment-target.py')
+    expect(JSON.stringify(macosCheck)).toContain('$EXE-pty.node')
     expect(JSON.stringify(macosCheck)).toContain('$EXE-spawn-helper')
     expect(manylinuxSmoke).toMatchObject({ if: "runner.os == 'Linux'" })
     expect(JSON.stringify(manylinuxSmoke)).toContain('-e DSH_TELEMETRY_DISABLED')
-    expect(JSON.stringify(manylinuxSmoke)).toContain('PKG_NATIVE_CACHE_PATH=/tmp/dsh-pkg-native')
-    expect(JSON.stringify(manylinuxSmoke)).toContain('node-pty/build/Release/pty.node')
-    expect(JSON.stringify(manylinuxSmoke)).toContain('Expected one extracted node-pty addon')
+    expect(JSON.stringify(manylinuxSmoke)).toContain('bundled_runtime_path')
+    expect(JSON.stringify(manylinuxSmoke)).toContain('$runtime-pty.node')
+    expect(JSON.stringify(manylinuxSmoke)).toContain('ldd \\"$runtime-pty.node\\"')
+    expect(JSON.stringify(manylinuxSmoke)).not.toContain('PKG_NATIVE_CACHE_PATH')
   })
 
   it('uses the shared macOS deployment-target check in GitLab', () => {
@@ -382,7 +384,7 @@ describe('Python release workflows', () => {
     }
 
     expect(macosCheck).toContain('scripts/check-macos-deployment-target.py')
-    expect(macosCheck).toContain('"$EXE" "$EXE-spawn-helper"')
+    expect(macosCheck).toContain('"$EXE" "$EXE-pty.node" "$EXE-spawn-helper"')
   })
 })
 
