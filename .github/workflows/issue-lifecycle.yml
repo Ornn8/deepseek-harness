@@ -13,7 +13,7 @@ on:
       - reopened
       - field_added
       - field_removed
-  pull_request:
+  pull_request_target:
     types:
       - opened
       - edited
@@ -22,9 +22,6 @@ on:
       - labeled
       - unlabeled
       - review_requested
-  pull_request_review:
-    types:
-      - submitted
 
 permissions:
   contents: read
@@ -36,7 +33,9 @@ concurrency:
 jobs:
   lifecycle:
     name: Issue lifecycle
-    if: ${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}
+    # The workflow and policy script both come from the default branch. Pull
+    # request fields remain untrusted event data and never become executable code.
+    if: ${{ vars.DSH_ISSUE_APP_CLIENT_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out trusted policy
@@ -50,8 +49,12 @@ jobs:
         with:
           client-id: ${{ vars.DSH_ISSUE_APP_CLIENT_ID }}
           private-key: ${{ secrets.DSH_ISSUE_APP_PRIVATE_KEY }}
-          owner: deepseek-harness
-          repositories: deepseek-harness
+          # Derive the installation from the running repository instead of
+          # hardcoding upstream, so an App-installed fork addresses its own
+          # installation; the job-level guard above keeps credential-less
+          # repositories (including this fork) inert.
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
       - name: Handle repository event
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
