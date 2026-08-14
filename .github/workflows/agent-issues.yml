@@ -23,14 +23,14 @@ jobs:
       || (github.event_name == 'issues'
         && github.event.action == 'labeled'
         && github.event.label.name == 'agent/dsh-failed')
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dispatch-backlog.yml@f7eb46e73b7190c06bd1428809ec0fb95965da4a
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dispatch-backlog.yml@4f0a0e879541f267382b4dc1f6aa6332d033a9b2
 
   dsh-issue:
     if: >-
       github.event_name == 'issues'
       && github.event.label.name == 'agent/dsh'
       && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@f7eb46e73b7190c06bd1428809ec0fb95965da4a
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@4f0a0e879541f267382b4dc1f6aa6332d033a9b2
     with:
       issue_number: ${{ github.event.issue.number }}
 
@@ -38,4 +38,4 @@ jobs:
     if: >-
       github.event_name == 'push'
       && github.ref_name == github.event.repository.default_branch
-    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-reviews.yml@f7eb46e73b7190c06bd1428809ec0fb95965da4a
+    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-reviews.yml@4f0a0e879541f267382b4dc1f6aa6332d033a9b2
