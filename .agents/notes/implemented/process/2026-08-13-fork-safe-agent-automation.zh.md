@@ -6,11 +6,12 @@ Status: implemented
 
 ## Problem
 
-`Ornn8/deepseek-harness` 为运行其 GitHub-agent 自动化流水线而 fork 了上游仓库，但三种故障模式使该 fork 无法自主运行。
+`Ornn8/deepseek-harness` 为运行其 GitHub-agent 自动化流水线而 fork 了上游仓库，但四种故障模式使该 fork 无法自主运行。
 
 1. Issue policy 检查读取 `config.json`，其中 `organization` 与 `repository` 均为 `deepseek-harness`，因此 `policy.mjs pr` 会查询 `/repos/deepseek-harness/deepseek-harness/...`。fork 的 PR 于是从 `requested_reviewers` 端点收到 404，作业失败。
 2. Issue lifecycle 检查在其 `create-github-app-token` 步骤上硬编码了 `owner: deepseek-harness` 与 `repositories: deepseek-harness`，且该步骤需要 `vars.DSH_ISSUE_APP_CLIENT_ID` 与 `secrets.DSH_ISSUE_APP_PRIVATE_KEY`。fork 两者都未配置，于是该 action 以 "client-id must be set to a non-empty string" 失败。
 3. 一个调用工作流同时承担 Issue 分发、Codex 审核、DSH 返工和合并意图。它把可变标签和仅绑定 head 的状态当作持久状态，让无关作业共用耦合的权限范围，并且在接收工作流只存在于 PR、尚未进入默认分支时就依赖 `repository_dispatch`。因此，引导阶段的阻断审核可能无法唤醒 DSH，而后续 base 更新也可能留下一个已成功但不再代表已审核 base/head 对的 head 状态。
+4. 必需 CI 作业默认使用仅上游拥有的 larger-runner 标签。个人 fork 没有带这些标签的 runner，因此必需检查会一直排队而不执行。
 
 ## Decision
 
@@ -22,7 +23,7 @@ Status: implemented
 
 `issue-lifecycle.yml` 在作业级 `if` 上加入 `vars.DSH_ISSUE_APP_CLIENT_ID != ''`，使无凭据的仓库（包括本 fork）跳过作业而不是令其失败，并从 `github.repository_owner` 与 `github.event.repository.name` 推导 App 安装归属，使安装了 App 的 fork 指向自身安装而非上游。
 
-目标仓库用相互独立的工作流负责 Issue 分发、精确版本对 PR 审核、可信返工反馈、显式落地和健康检查。每个调用方在 `uses` 中固定可复用工作流 revision；控制器 revision、角色 worker 和 runner 选择由控制器持有，不再作为调用方输入。CI 修复与 CI 触发的落地工作流把所配置的 CI 工作流名称声明为字面量 `workflow_run.workflows` 订阅，使 GitHub 能注册这些 listener，再在分发前把收到的名称与 `DSH_AUTOMATION_CI_WORKFLOW` 比对。包括项目生命周期和 Issue policy 在内的所有特权 PR listener 都使用 `pull_request_target` 并签出默认分支 policy，因此 PR 在进入默认分支前不能替换特权工作流定义。review-submitted 事件不再作为特权输入；自动化 BLOCK 标签只是精确审核 CheckRun 与不可变返工 WorkRequest 的可见投影。
+目标仓库用相互独立的工作流负责 Issue 分发、精确版本对 PR 审核、可信返工反馈、显式落地和健康检查。每个调用方在 `uses` 中固定可复用工作流 revision；控制器 revision、角色 worker 和 runner 选择由控制器持有，不再作为调用方输入。必需 CI 作业在上游仓库中继续使用 larger runner；在 fork 中则选择标准 GitHub-hosted runner，除非仓库变量显式选择 self-hosted 故障转移池。CI 修复与 CI 触发的落地工作流把所配置的 CI 工作流名称声明为字面量 `workflow_run.workflows` 订阅，使 GitHub 能注册这些 listener，再在分发前把收到的名称与 `DSH_AUTOMATION_CI_WORKFLOW` 比对。包括项目生命周期和 Issue policy 在内的所有特权 PR listener 都使用 `pull_request_target` 并签出默认分支 policy，因此 PR 在进入默认分支前不能替换特权工作流定义。review-submitted 事件不再作为特权输入；自动化 BLOCK 标签只是精确审核 CheckRun 与不可变返工 WorkRequest 的可见投影。
 
 自动化仓库公开一套统一的 Agent Worker 调用与终态回执接口。运行时专用 Adapter 负责启动和观察 DSH Web、ChatGPT Desktop 或使用 JSON 协议的命令；目标工作流把 `review` 与 `change` 角色映射到已配置的 worker id。两个角色分别使用 `agent-reviewer` 与 `agent-change` runner 注册、进程、工作目录、并发组和健康检查作业。
 
