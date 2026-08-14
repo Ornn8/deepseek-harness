@@ -394,7 +394,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = 'f7f44e21882430a3580fd0492ef599eeee419a31'
+  const controllerSha = 'a1e8f84cd431a306619b7a8fbde934f3160db22c'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
@@ -484,7 +484,7 @@ describe('Agent automation workflows', () => {
       types: ['completed'],
     })
     expect(workflowEvent(recovery, 'workflow_run')).toEqual({
-      workflows: ['Agent Issues', 'Agent PR Rework', 'Agent PR Review'],
+      workflows: ['Agent Issues', 'Agent PR Rework', 'Agent PR CI Repair', 'Agent PR Review'],
       types: ['completed'],
     })
     expect(workflowJob(recovery, 'recover').if).toContain('["failure", "cancelled"]')

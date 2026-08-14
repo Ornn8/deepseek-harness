@@ -17,7 +17,7 @@ Status: implemented
 
 每项检查都从它实际运行的仓库推导坐标，而不是写死上游仓库；依赖 App 的 lifecycle 在其凭据缺失时变为惰性（inert）。
 
-失败或取消的顶层 Agent Issues、Agent PR Rework 与 Agent PR Review run 现在进入独立的事件驱动恢复工作流。恢复控制器验证 source run 的 `referenced_workflows` 中精确的可复用 controller SHA，定位匹配的持久 Issue 或 pull request 状态记录，重新检查实时 Issue 状态或精确 PR 版本对，并且最多记录三次重试。评论和标签仍是审计投影；伪造记录不能授权重试。第三次耗尽后保留 `agent/dsh-failed` 或 `automation/review-failed` dead-letter，且不会调用模型。
+失败或取消的顶层 Agent Issues、Agent PR Rework、Agent PR CI Repair 与 Agent PR Review run 进入独立的事件驱动恢复工作流。恢复控制器验证 source run 的 `referenced_workflows` 中精确的可复用 controller SHA，定位匹配的持久 Issue 或 pull request 状态记录，重新检查实时 Issue 状态或精确 PR 版本对，并且最多记录三次重试。评论和标签仍是审计投影；伪造记录不能授权重试。第三次耗尽后保留 `agent/dsh-failed` 或 `automation/review-failed` dead-letter，且不会调用模型。
 
 `policy.mjs` 将 `process.env.GITHUB_REPOSITORY`（`owner/repo`）拆分为 `organization` 与 `repository`，并优先于 `config.json` 的默认值使用；本地与测试运行未设置该变量，保持检入的默认值。所有原先内插 `config.organization`/`config.repository` 的 REST/GraphQL 路径现在都内插这两个推导常量。
 
@@ -29,9 +29,9 @@ ProjectV2 与组织级 Issue Fields 是仅限组织的 GitHub 功能：在个人
 
 自动化仓库公开一套统一的 Agent Worker 调用与终态回执接口。运行时专用 Adapter 负责启动和观察 DSH Web、ChatGPT Desktop 或使用 JSON 协议的命令；目标工作流把 `review` 与 `change` 角色映射到已配置的 worker id。两个角色分别使用 `agent-reviewer` 与 `agent-change` runner 注册、进程、工作目录、并发组和健康检查作业。
 
-审核 worker 获得精确 base/head checkout，不获得 Actions 凭据，并只做只读检查。作业级 Actions token 发布 pending 或最终 `codex/review` CheckRun、英文审核评论和投影标签。BLOCK 结论记录精确版本对；控制器发布一个不可变、幂等、面向 `change` 角色的返工 WorkRequest 后，审核任务即终止。接收工作流独立启动，校验 WorkRequest 字段、实时 head、审核证据和标签，再调用其配置的变更 worker。名称等于 `DSH_AUTOMATION_CI_WORKFLOW` 的已完成失败工作流会创建一个由 run id 和 attempt 标识的独立请求；只有名称、失败结论、PR 编号和当前 head 全部匹配时，控制器才允许变更 worker 检查日志或修改分支。
+审核 worker 获得精确 base/head checkout，不获得 Actions 凭据，并只做只读检查。作业级 Actions token 发布 pending 或最终 `codex/review` CheckRun、英文审核评论和投影标签。由于 GitHub 可能规范化其可见 details URL，该 CheckRun 将原始 Actions run URL 存为不透明的外部元数据；落地过程读取该 run 并验证固定的可复用控制器引用。BLOCK 结论记录精确版本对；控制器发布一个不可变、幂等、面向 `change` 角色的返工 WorkRequest 后，审核任务即终止。接收工作流独立启动，校验 WorkRequest 字段、实时 head、审核证据和标签，再调用其配置的变更 worker。名称等于 `DSH_AUTOMATION_CI_WORKFLOW` 的已完成失败工作流会创建一个由 run id 和 attempt 标识的独立请求；只有名称、失败结论、PR 编号和当前 head 全部匹配时，控制器才允许变更 worker 检查日志或修改分支。
 
-PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制器只接受当前指向仓库默认分支的非草稿 PR，要求精确 base/head PASS 记录和所有实时分支保护上下文均成功，在 squash merge 前立即重复这些检查，否则不改变 PR 即退出。成功的已配置 CI workflow run 会在待定检查完成后重试落地。
+PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制器只接受当前指向仓库默认分支的非草稿 PR，要求精确 base/head PASS 记录，以及由 GitHub Actions App 发布在精确 head 上且名称为 `all checks passed` 的已配置 CheckRun，在 squash merge 前立即重复这些检查，否则不改变 PR 即退出。由于工作流 token 无法读取仓库管理设置，安装和在线诊断会独立强制执行分支保护要求。成功的已配置 CI workflow run 会在待定检查完成后重试落地。
 
 每次向仓库默认分支推送后，协调器都会把同仓库 PR 记录的 base commit 与当前默认分支 commit 比较，无论 GitHub 的临时 mergeability 状态如何，都会先更新陈旧 base，再只为没有可信精确版本对证据的当前版本分发审核。GitHub 会在自身作业 token 修改标签后抑制普通工作流递归，因此 backlog、协调和有界恢复使用显式 `repository_dispatch` 事件；若一个带 `agent/dsh` 标签的 Issue 既没有关闭它的 PR，也没有终态失败，backlog 可以重新认领它，而工作流并发控制和稳定的 WorkRequest 标识会阻止第二个模型轮次。受保护默认分支上的 listener 与固定的可复用控制器会在调用模型前重新核验实时 Issue 或精确 PR 版本对。手动健康工作流在各自 runner 上分别检查每个已配置 worker，并检查固定控制器与 GitHub 访问，全程不调用模型。
 

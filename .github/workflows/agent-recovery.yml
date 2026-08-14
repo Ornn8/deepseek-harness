@@ -2,7 +2,7 @@ name: Agent Recovery
 
 on:
   workflow_run:
-    workflows: [Agent Issues, Agent PR Rework, Agent PR Review]
+    workflows: [Agent Issues, Agent PR Rework, Agent PR CI Repair, Agent PR Review]
     types: [completed]
 
 permissions:
@@ -16,6 +16,6 @@ jobs:
     if: >-
       contains(fromJSON('["failure", "cancelled"]'), github.event.workflow_run.conclusion)
       && github.event.workflow_run.name != github.workflow
-    uses: Ornn8/dsh-agent-automation/.github/workflows/recover-backlog.yml@f7f44e21882430a3580fd0492ef599eeee419a31
+    uses: Ornn8/dsh-agent-automation/.github/workflows/recover-backlog.yml@a1e8f84cd431a306619b7a8fbde934f3160db22c
     with:
       source_run_id: ${{ github.event.workflow_run.id }}
