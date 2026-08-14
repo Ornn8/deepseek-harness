@@ -16,22 +16,30 @@ DeepSeek Harness WebUI 以浏览器应用的形式交付：[`apps/web`](../../..
 
 整体复用官方 WebUI，只在其外添加一层薄壳。独立窗口渲染完全相同的已构建 [`apps/web`](../../../../apps/web/) 前端——同一 React 组件树、同一 CSS 令牌、同一浏览器插件名录——因此像素与交互天然一致。桌面进程通过同一 [`dsh-base`](../../../../packages/bundle/base/README.md) + [`dsh-web-app`](../../../../packages/bundle/web-app/README.md) 组合在进程内启动现有 harness 宿主，因此 API 网关、会话日志、工具、沙箱、设置、凭据、智能体预设与目录选择器都以不变语义运行。
 
-载体分两阶段推进，第一阶段刻意做到最小：
+载体以单一阶段交付——回环 HTTP 源——IPC 替换被推迟，因为在本提案所保持的「纯增量外壳」边界内，它无法作为仅替换 `doFetch` 的后续工作实现：
 
 - **阶段一——回环 HTTP，零协议改动。** 外壳在 [`dsh-host-webserver`](../../../../packages/host/webserver/README.md) 已提供的规范回环 URL（`http://127.0.0.1:<port>`）处打开一个 Electron `BrowserWindow`，使用现有浏览器 fetch/SSE 载体。无需任何载体、契约、UI 或 harness 语义改动；唯一新增代码是一个启动组合并打开窗口的 Electron 主进程装配。
-- **阶段二——IPC fetch 载体，即已记录的后续工作。** 传输已经隔离到一个 seam 上：客户端侧是 [`AbstractApiClient.doFetch`](../../../../packages/host/apiproxy/src/fetch/client.ts)，宿主侧是 [`toFetchHandler(api)`](../../../../packages/host/apiproxy/src/fetch/handler.ts)，其中 [`InProcessApiClient`](../../../../packages/host/apiproxy/src/fetch/client.ts) 证明了同构路径从不触碰网络。后续改动新增一个 Electron IPC 子类，其 `doFetch` 把 `ipcRenderer`/`ipcMain` 桥接到宿主处理器，让窗口经 `file://` 加载 dist 而完全不再需要 HTTP 端口——这正是 [分层说明](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md) 与 [webserver 文档](../../../../docs/subsystems/web-server.md) 已经描述的结果（「Electron 通过 `file://` 加载已构建文件，并经 IPC 桥接发送 fetch 请求」）。替换载体不会改动四象限线协议与任何业务路径。
+- **阶段二——推迟；IPC 载体需要完整的传输决策，而非 `doFetch` 替换。** 「单一 seam」的读法止步于 `AbstractApiClient` 抽象：`doFetch` 是上行传输方面（[fetch/client.ts](../../../../packages/host/apiproxy/src/fetch/client.ts)、[`toFetchHandler(api)`](../../../../packages/host/apiproxy/src/fetch/handler.ts)，以及证明同构路径从不触碰网络的 [`InProcessApiClient`](../../../../packages/host/apiproxy/src/fetch/client.ts)），但已交付的浏览器载体更宽。connection 插件的浏览器半身内部实例化 `new WebApiClient()`，且不存在 API 客户端注入 seam（[connection 客户端入口](../../../../packages/client/connection/src/client/index.ts)）；`WebApiClient` 又用每个逻辑流一个 WebSocket 下行覆盖了 `openMux`/`openHost`（[web-api-client.ts](../../../../packages/client/connection/src/client/web-api-client.ts)）——增量 IPC 子类永远不会被选中，即便被选中也无法替换下行载体。已构建的前端同样无法经 `file://` 启动：[`ClientModuleRegistry`](../../../../packages/client/modules/src/index.ts) 把引导图以 `window.__DSH_BOOT__` 注入每个被服务的 `index.html`（缺失时 [`parseBootManifest`](../../../../packages/client/modules/src/client/manifest.ts) 直接拒绝），每个图行都从 `/plugins/<id>/client.js` bundle 路由加载外部 classic 脚本，且已构建的 `index.html` 引用根绝对路径的 `/assets/*` URL。因此未来的 IPC 阶段需要自己的架构决策，覆盖引导图交付、无 HTTP 的客户端 bundle 与静态资源加载，以及完整的「一元+流」连接提供方（名录级替换或对上游 `connection` 的改动）——全部超出本提案保持的边界。[分层说明](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md) 与 [webserver 文档](../../../../docs/subsystems/web-server.md) 中关于 `file://` 的一行描述只是通往该未来决策的指针，不是已被证明的载体。
 
-原生能力走已经存在的 seam，而非新造。工作区选择器已经在 `ctx.directoryPicker` 之后拆分 native 与 browse 后端（[seam 说明](../../implemented/architecture/2026-07-28-directory-picker-capability-seam.md)）；Electron 外壳经 Electron 自己的对话框 API 提供 `native` 交互，正如该说明所预见，无需网关或 `ui-workspace` 改动。会话导出、`host.openPath` 以及设置/凭据的「打开文档」都已委托给平台打开器，因此在窗口化宿主中保持不变。
+原生能力走已经存在的 seam，而非新造。工作区选择器已经在 `ctx.directoryPicker` 之后拆分 native 与 browse 后端（[seam 说明](../../implemented/architecture/2026-07-28-directory-picker-capability-seam.md)）；阶段一完全按照 Web 界面的方式挂载上游 `directory-picker` 组合，不新增任何自己的选择器面。该 seam 预见的 Electron `native` 交互提供方——同一个单占用空洞中的一个双面后端包，无需网关或 `ui-workspace` 改动——是唯一可能的后续改动，且它替换自动解析出的后端，而不是挂载第二个选择器。会话导出、`host.openPath` 以及设置/凭据的「打开文档」都已委托给平台打开器，因此在窗口化宿主中保持不变。
 
 ## Visual parity baseline
 
-[`apps/web/tests/snapshots/`](../../../../apps/web/tests/snapshots/) 下已提交的黄金样本是视觉真相源。它们是主要 WebUI 状态的确定性、无密钥渲染，由 Linux PR CI 同样使用的只读模式重放：
+视觉真相源由两部分组成——无密钥功能门与渲染基线——外加一份静态美术资源清单。
+
+[`apps/web/tests/snapshots/`](../../../../apps/web/tests/snapshots/) 下已提交的黄金样本是无密钥功能门。它们是主要 WebUI 状态的确定性 `ariaSnapshot()` 转录，由 Linux PR CI 同样使用的只读模式重放：
 
 ```sh
 DSH_SNAPSHOT=replay pnpm run test:web
 ```
 
-`test:web` 先重建 `apps/web` 的 dist，再运行浏览器冒烟对（真实宿主用例在无 `DEEPSEEK_API_KEY` 时自动跳过）以及无密钥重放的 e2e 场景。黄金样本枚举了后续工作必须匹配而非重新设计的状态：会话/工作区框架、对话与输入框、计划与目标条、后台任务、工具与工作流行、设置与插件配置、模型选择、引导与错误状态、消息操作，以及导航窗格。独立 GUI 必须渲染这些相同转录；后续桌面交付物通过对着窗口重放相同夹具来固化这一点。
+`test:web` 先重建 `apps/web` 的 dist，再运行浏览器冒烟对（真实宿主用例在无 `DEEPSEEK_API_KEY` 时自动跳过）以及无密钥重放的 e2e 场景。黄金样本枚举了后续工作必须匹配而非重新设计的状态：会话/工作区框架、对话与输入框、计划与目标条、后台任务、工具与工作流行、设置与插件配置、模型选择、引导与错误状态、消息操作，以及导航窗格。它们验证结构、存在性、顺序与文案，但对颜色不敏感，也不携带主题或布局黄金样本——生命周期 e2e 明确说明了这一局限（[lifecycle-chrome.e2e.ts](../../../../apps/web/tests/lifecycle-chrome.e2e.ts)）。
+
+渲染基线记录上述同一批状态的已提交截图：在 WebUI 所测试的 Chromium 主版本上、以固定视口录制，并在每张截图旁注明录制条件（视口尺寸、平台、主题）；后续工作必须匹配这些截图，而非重新设计。真实宿主冒烟已经写出整页截图作为对比证据（[smoke-real.e2e.ts](../../../../apps/web/tests/smoke-real.e2e.ts)）；基线以无密钥方式记录同类截图。
+
+静态美术资源另有自己的清单检查：打包后的桌面应用必须让每项上游视觉/静态资源保持存在且可解析——[`apps/web/public/**`](../../../../apps/web/public/)（`favicon.svg`、`manifest.webmanifest`）以及 Vite 发射进 dist 的已导入 SVG/图片/字体资源（KaTeX 字体的 `assets/fonts/*`，外加图标与图片）。基线记录该清单；后续桌面交付物证明每一项都能在打包应用中解析。
+
+独立 GUI 必须渲染相同的转录、匹配相同的截图并解析相同的资源；后续桌面交付物通过对着窗口重放相同夹具来一并固化这三者。
 
 ## Functional parity checklist
 
@@ -51,17 +59,17 @@ DSH_SNAPSHOT=replay pnpm run test:web
 
 ## Change boundary
 
-**新增。** 位于 `apps/` 下的 Electron 外壳装配——即 [分层说明](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md) 的「在 `apps/` 下写一个装配模块」步骤——包含一个启动组合、打开窗口并拥有应用私有信号/打印/退出语义的主进程，以及它的 `package.json`（Electron 是唯一新增的运行时依赖）和一个小型引导。阶段二的后续工作新增一个 `AbstractApiClient` IPC 子类与一个宿主侧 IPC 到 `toFetchHandler` 的桥，均为增量。
+**新增。** 位于 `apps/` 下的 Electron 外壳装配——即 [分层说明](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md) 的「在 `apps/` 下写一个装配模块」步骤——包含一个启动组合、打开窗口并拥有应用私有信号/打印/退出语义的主进程，以及它的 `package.json`（Electron 是唯一新增的运行时依赖）和一个小型引导。阶段一就是全部范围：不承诺任何 IPC 载体，外壳也不伴随任何客户端包或名录改动。未来的 IPC 阶段是单独的架构决策（见 Proposal），届时可能正当地改动 `connection` 包或其名录行；在该决策落地前，桌面路径以回环 HTTP 源交付。
 
 **逐字节或语义不变。** 所有 `packages/client/**` 源文件、所有 `apps/web` UI 源文件、`packages/host/apiproxy/src/api/**` 下的线契约、[`web-app/cordis.patch.yml`](../../../../packages/bundle/web-app/cordis.patch.yml) 与 [`base/cordis.patch.yml`](../../../../packages/bundle/base/cordis.patch.yml) 中的浏览器插件名录与宿主行、主题令牌与 CSS，以及所有 core、api、llm、shell、subprocess、fs、lsp、skill、web 与 terminal 包。桌面外壳原样复用 `web-app` 组合；若需要仅外壳的行（例如打开窗口的启动器），它应作为一个增量组合层或新外壳包出现，而绝不修改既有行。
 
 ## Launch and lifecycle
 
-外壳主进程启动与 CLI 相同的组合——通过 [`app-boot` profile 组合器](../../../../packages/boot/app-boot/README.md) 依次为 `dsh-base`、`dsh-web-app`——因此 [`web-startup`](../../../../packages/bundle/web-app/src/startup.ts) 解析相同的 `--host`/`--port`/`--trusted-host` 标志，[`webserver`](../../../../packages/host/webserver/README.md) 绑定回环端口，[`web-runtime`](../../../../packages/bundle/web-app/src/index.ts) 解析 dist 并打印 URL。Loader 树结算后，外壳读取规范 URL 并在该处打开 `BrowserWindow`。窗口与浏览器完全一样地连接：加载 `index.html`、运行两阶段 [`AppWebEntry` 引导](../../../../packages/client/web/README.md)、挂载客户端插件树，并经 [`connection`](../../../../packages/client/connection/README.md) 完成就绪握手。现有的 `app:web-surface` 提示词区段与 `DSH_WEB_URL` 外壳变量对窗口化宿主依然准确，窗口关闭复用 CLI 的有界关闭（SIGINT/SIGTERM 处置根节点），而非新增拆除路径。阶段二中外壳在 `file://` 处打开窗口并经 IPC 载体完成同一握手，此时不再挂载 HTTP 服务器。
+外壳主进程启动与 CLI 相同的组合——通过 [`app-boot` profile 组合器](../../../../packages/boot/app-boot/README.md) 依次为 `dsh-base`、`dsh-web-app`——因此 [`web-startup`](../../../../packages/bundle/web-app/src/startup.ts) 解析相同的 `--host`/`--port`/`--trusted-host` 标志，[`webserver`](../../../../packages/host/webserver/README.md) 绑定回环端口，[`web-runtime`](../../../../packages/bundle/web-app/src/index.ts) 解析 dist 并打印 URL。Loader 树结算后，外壳读取规范 URL 并在该处打开 `BrowserWindow`。窗口与浏览器完全一样地连接：加载 `index.html`、运行两阶段 [`AppWebEntry` 引导](../../../../packages/client/web/README.md)、挂载客户端插件树，并经 [`connection`](../../../../packages/client/connection/README.md) 完成就绪握手。现有的 `app:web-surface` 提示词区段与 `DSH_WEB_URL` 外壳变量对窗口化宿主依然准确。窗口关闭显式映射到 CLI 的有界关闭：[`runProfile`](../../../../apps/cli/src/profile-boot.ts) 安装的 SIGINT/SIGTERM 处理器会调用其返回的 `ProcessShutdown` 控制器，后者处置根节点——关闭 `BrowserWindow` 不会发出其中任何一个信号，因此外壳必须拦截 Electron 的生命周期（`window-all-closed` 或 `before-quit`），调用同一关闭控制器，等待根节点处置完毕，然后退出。该映射属于外壳自身的私有退出语义，不是 harness 改动。桌面路径停留在回环 HTTP 源；本提案不存在 `file://` 阶段。
 
 ## Testing plan
 
-对齐以复用来度量，而非靠一套平行的断言面。桌面外壳必须对着窗口通过为浏览器面把关的同一无密钥重放（`DSH_SNAPSHOT=replay pnpm run test:web`），新增的桌面冒烟必须证明窗口加载相同的引导清单、完成与浏览器载体相同的就绪握手，并对一个种子会话渲染相同的转录。因此，浏览器 WebUI 与独立 GUI 的对齐意味着：相同的黄金样本、相同的线契约、相同的客户端插件名录、相同的 `host.describe` 就绪应答——唯一允许的差异是 WebUI 之外的窗口框架。真实提供方的对齐仍在 `test:e2e` 中，它在无密钥时自动跳过；两种外壳都不新增携带密钥的路径。
+对齐以复用来度量，而非靠一套平行的断言面。桌面外壳必须对着窗口通过为浏览器面把关的同一无密钥重放（`DSH_SNAPSHOT=replay pnpm run test:web`），新增的桌面冒烟必须证明窗口加载带有已注入引导清单的被服务 `index.html`、完成与浏览器载体相同的就绪握手、对一个种子会话渲染相同的转录，并解析静态资源清单中的每一项。因此，浏览器 WebUI 与独立 GUI 的对齐意味着：相同的黄金样本、相同的截图、相同的资源解析、相同的线契约、相同的客户端插件名录、相同的 `host.describe` 就绪应答——唯一允许的差异是 WebUI 之外的窗口框架。真实提供方的对齐仍在 `test:e2e` 中，它在无密钥时自动跳过；两种外壳都不新增携带密钥的路径。
 
 ## Alternatives considered
 
@@ -71,21 +79,21 @@ DSH_SNAPSHOT=replay pnpm run test:web
 
 **发布一个在操作者默认浏览器中打开回环 URL 的浏览器启动器。** 这不是独立窗口，不提供外壳拥有的生命周期或原生窗口框架，省下的只有窗口代码，却无法满足「独立 GUI」目标。已否决。
 
-**把 IPC 载体作为阶段一。** 作为最终形态它是对的，但它会在任何窗口存在之前就新增一个载体及其宿主侧桥；回环 HTTP 服务器已经存在、已经正确、已经受信。对阶段一已否决，保留为已记录的阶段二后续工作。
+**把 IPC 载体作为阶段一。** 作为最终形态它是对的，但它不是小型后续工作：它需要本提案拒绝承诺的完整引导图、bundle、资源与连接提供方设计。对阶段一已否决并推迟；回环 HTTP 服务器已经存在、已经正确、已经受信。
 
 **经新的 Electron 专属路径暴露原生目录选择器。** 不必要——[`directory-picker` seam](../../implemented/architecture/2026-07-28-directory-picker-capability-seam.md) 已经隔离 native 与 browse，其说明指出提供 `native` 交互的 Electron 提供方只是一个双面后端包，无需网关或 `ui-workspace` 改动。已否决，改选复用该 seam。
 
 ## Acceptance criteria
 
-- 独立窗口渲染官方 WebUI，与浏览器面无视觉或行为差异，以相同的无密钥重放黄金样本为证据。
+- 独立窗口渲染官方 WebUI，与浏览器面无视觉或行为差异，以相同的无密钥重放黄金样本、已提交的截图基线以及静态资源解析检查为证据。
 - harness 语义不变：后端、运行时、API、RPC、会话数据、提示词、智能体、工具、插件、技能、模型、预设、权限或配置的行为与 `dsh --profile web` 无任何差异。
 - 外壳纯属增量；所有 `packages/client/**` 与 `apps/web` UI 源文件以及 `/api` 线契约保持逐字节或语义不变。
 - 窗口达到与浏览器相同的 `host.describe` 就绪应答，并挂载相同的客户端插件名录。
-- 阶段二（当构建时）只替换 `AbstractApiClient.doFetch` 并新增宿主侧 IPC 桥；四象限协议、业务路径与所有快照保持不变。
+- 桌面路径以回环 HTTP 源交付；本改动不包含任何 IPC 载体、客户端包改动或名录改动，任何未来的 IPC 载体都是单独的架构决策。
 
 ## Risks
 
 - **新增运行时依赖。** Electron 为安装包新增了可观的二进制与供应链面。缓解：外壳保持轻薄、WebUI 逐字节不变，且阶段一不再新增其他依赖。
-- **阶段一期间仍绑定端口。** 回环 HTTP 服务器仍挂载，因此独立窗口依然打开一个本地端口。缓解：阶段二为桌面路径移除该服务器；端口仅回环且已有栅栏防护，因此不扩大攻击面。
+- **绑定端口。** 回环 HTTP 服务器仍挂载，因此独立窗口始终打开一个本地端口。端口仅回环且已有栅栏防护，因此不扩大攻击面；移除端口与 IPC 载体一同推迟。
 - **dist 分叉导致视觉漂移。** 若桌面路径曾以不同方式构建前端，对齐会悄然失效。缓解：保持单一 `apps/web` dist 为唯一来源，并用相同黄金样本把关。
-- **信任栅栏范围。** IPC 载体必须保留 HTTP 栅栏所强制的回环信任假设；若阶段二的桥接受非回环来源，就会削弱它。缓解：让 IPC 通道仅限进程本地，并保留现有信任逻辑而非重写。
+- **未来 IPC 载体的信任栅栏范围。** 若被推迟的 IPC 载体将来被设计出来，它必须保留 HTTP 栅栏所强制的回环信任假设；接受非回环来源的桥会削弱它。任何此类设计都应让通道仅限进程本地并复用现有信任逻辑；在那之前，HTTP 栅栏是唯一的信任边界。

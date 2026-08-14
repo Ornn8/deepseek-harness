@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-14-desktop-gui-minimum-change-standalone-architecture.md
-2026-08-14-desktop-gui-minimum-change-standalone-architecture.md: cf2ac0768f12d32f0e19fe84af5de9f6aff684f7
-2026-08-14-desktop-gui-minimum-change-standalone-architecture.zh.md: 0d85ec637ad8c96f45190b017a0d48162fc96085
+2026-08-14-desktop-gui-minimum-change-standalone-architecture.md: bb9ae17fb585294656dda5c0a767df3908f857f1
+2026-08-14-desktop-gui-minimum-change-standalone-architecture.zh.md: 27378107afa990dfe276d643644e942a88d52ad9
