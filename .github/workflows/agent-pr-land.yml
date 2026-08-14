@@ -17,9 +17,9 @@ jobs:
       || (github.event_name == 'workflow_run'
         && github.event.workflow_run.conclusion == 'success'
         && github.event.workflow_run.pull_requests[0].number != null)
-    uses: Ornn8/dsh-agent-automation/.github/workflows/land-pr.yml@d5df4e3263a9a0728bdee25f51d9d2b8a6e601f1
+    uses: Ornn8/dsh-agent-automation/.github/workflows/land-pr.yml@beb99e7acc1e42a168cbfb3c2cbdc42d7a8eb2de
     with:
       repository: ${{ github.repository }}
       pull_request_number: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_number || github.event.workflow_run.pull_requests[0].number }}
       head_sha: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.head_sha || github.event.workflow_run.head_sha }}
-      controller_sha: d5df4e3263a9a0728bdee25f51d9d2b8a6e601f1
+      controller_sha: beb99e7acc1e42a168cbfb3c2cbdc42d7a8eb2de
