@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-在容器重建之前，步骤先在 runner 上运行 `pnpm rebuild node-pty`，强制 node-pty 的安装脚本（`node scripts/prebuild.js || node-gyp rebuild`）在当前树中重新生成 `build/` 与 node-addon-api 目标文件。随后容器内的 `make -C build BUILDTYPE=Release` 从一致的布局出发，针对 manylinux 编译 addon。重新生成是无条件的：每次运行多付出一次宿主侧 node-pty 重建的代价，同时让该步骤不再依赖冻结安装产生的任何状态。工作流 spec 固定了 `pnpm rebuild node-pty` 调用，日后删除该重新生成会令 spec 失败。
+在容器重建之前，步骤先在 runner 上运行 `pnpm rebuild -r node-pty`，强制 node-pty 的安装脚本（`node scripts/prebuild.js || node-gyp rebuild`）在当前树中重新生成 `build/` 与 node-addon-api 目标文件。递归形式是必须的：从工作区根目录执行裸 `pnpm rebuild node-pty` 会静默跳过该包，因为 node-pty 只是根项目的传递依赖，缓存安装恢复的带毒 `build/` 于是原样保留。随后容器内的 `make -C build BUILDTYPE=Release` 从一致的布局出发，针对 manylinux 编译 addon。重新生成是无条件的：每次运行多付出一次宿主侧 node-pty 重建的代价，同时让该步骤不再依赖冻结安装产生的任何状态。工作流 spec 固定了 `pnpm rebuild -r node-pty` 调用，日后删除该重新生成会令 spec 失败。
 
 ## Alternatives considered
 

@@ -10,7 +10,7 @@ The `python runtime / release-shaped Linux x64 / node24-linux-x64` CI job failed
 
 ## Decision
 
-Before the container rebuild, the step runs `pnpm rebuild node-pty` on the runner, forcing node-pty's install script (`node scripts/prebuild.js || node-gyp rebuild`) to regenerate `build/` and the node-addon-api target files in the current tree. The container's `make -C build BUILDTYPE=Release` then starts from a consistent layout and compiles the addon against manylinux. The regeneration is unconditional: it costs one host-side node-pty rebuild per run, and it keeps the step independent of whatever state the frozen install produced. The workflow spec pins the `pnpm rebuild node-pty` call, so removing the regeneration later fails the spec.
+Before the container rebuild, the step runs `pnpm rebuild -r node-pty` on the runner, forcing node-pty's install script (`node scripts/prebuild.js || node-gyp rebuild`) to regenerate `build/` and the node-addon-api target files in the current tree. The recursive form is required: from the workspace root a bare `pnpm rebuild node-pty` silently skips the package because node-pty is only a transitive dependency of the root project, leaving the poisoned `build/` that the cached install restored. The container's `make -C build BUILDTYPE=Release` then starts from a consistent layout and compiles the addon against manylinux. The regeneration is unconditional: it costs one host-side node-pty rebuild per run, and it keeps the step independent of whatever state the frozen install produced. The workflow spec pins the `pnpm rebuild -r node-pty` call, so removing the regeneration later fails the spec.
 
 ## Alternatives considered
 
