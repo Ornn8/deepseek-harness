@@ -21,12 +21,12 @@ jobs:
         && github.event.pull_request.head.repo.full_name == github.repository
         && (github.event.action != 'labeled' || github.event.label.name == 'automation/review-ready')
         && (github.event.action != 'edited' || github.event.changes.base.ref.from != null))
-    uses: Ornn8/dsh-agent-automation/.github/workflows/codex-review.yml@beb99e7acc1e42a168cbfb3c2cbdc42d7a8eb2de
+    uses: Ornn8/dsh-agent-automation/.github/workflows/codex-review.yml@0f313148b2853f9573d386c8012972675059d89e
     with:
       repository: ${{ github.repository }}
       pull_request_number: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_number || github.event.pull_request.number }}
       base_sha: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.base_sha || github.event.pull_request.base.sha }}
       head_sha: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.head_sha || github.event.pull_request.head.sha }}
-      controller_sha: beb99e7acc1e42a168cbfb3c2cbdc42d7a8eb2de
+      controller_sha: 0f313148b2853f9573d386c8012972675059d89e
       worker_id: codex
       runner_labels_json: '["self-hosted","Windows","X64","agent-reviewer"]'
