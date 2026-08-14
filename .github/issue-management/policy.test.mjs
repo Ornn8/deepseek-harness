@@ -246,42 +246,34 @@ test('requires policy only after a human PR enters review', () => {
 
 test('maps only explicit review handoffs to review status commands', () => {
   assert.equal(
-    resolvingIssueStatusCommand('pull_request', {
+    resolvingIssueStatusCommand('pull_request_target', {
       action: 'review_requested',
     }),
     'review-requested',
   )
   assert.equal(
-    resolvingIssueStatusCommand('pull_request_review', {
-      action: 'submitted',
-      review: { state: 'changes_requested' },
+    resolvingIssueStatusCommand('pull_request_target', {
+      action: 'labeled',
+      label: { name: 'automation/review-blocked' },
     }),
     'changes-requested',
   )
-  for (const state of ['approved', 'commented']) {
-    assert.equal(
-      resolvingIssueStatusCommand('pull_request_review', {
-        action: 'submitted',
-        review: { state },
-      }),
-      null,
-    )
-  }
   assert.equal(
-    resolvingIssueStatusCommand('pull_request_review', {
-      action: 'dismissed',
-      review: { state: 'changes_requested' },
+    resolvingIssueStatusCommand('pull_request_target', {
+      action: 'labeled',
+      label: { name: 'area/infra' },
     }),
-    null,
+    'implementation',
   )
+  assert.equal(resolvingIssueStatusCommand('pull_request_review', { action: 'submitted' }), null)
 })
 
 test('keeps ordinary pull request events as forward-only implementation signals', () => {
   for (const action of ['opened', 'edited', 'synchronize', 'reopened', 'labeled', 'unlabeled']) {
-    assert.equal(resolvingIssueStatusCommand('pull_request', { action }), 'implementation')
+    assert.equal(resolvingIssueStatusCommand('pull_request_target', { action }), 'implementation')
   }
   assert.equal(
-    resolvingIssueStatusCommand('pull_request', { action: 'review_request_removed' }),
+    resolvingIssueStatusCommand('pull_request_target', { action: 'review_request_removed' }),
     null,
   )
 })

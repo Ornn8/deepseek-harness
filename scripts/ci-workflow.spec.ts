@@ -327,6 +327,9 @@ describe('Python release workflows', () => {
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
+    if (!isRecord(manylinuxAddon) || typeof manylinuxAddon.run !== 'string') {
+      throw new TypeError('Linux native wheel build must define the node-pty rebuild command')
+    }
     expect(call.inputs).toHaveProperty('targets')
     expect(call.inputs).toMatchObject({
       ci: { type: 'boolean', default: false },
@@ -343,7 +346,7 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
-    expect(JSON.stringify(manylinuxAddon)).toContain('npm_config_build_from_source=true pnpm rebuild node-pty')
+    expect(manylinuxAddon.run).toContain('npm_config_build_from_source=true pnpm --dir "$addon_dir" run install')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
     expect(JSON.stringify(workflow)).toContain('--config.node-linker=hoisted')
@@ -392,7 +395,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = '9294448e7ee8d7628ee828d0980162e894e26b63'
+  const controllerSha = '1a020a360d68bd769a06173aa4e89b165e4c7a79'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
@@ -476,6 +479,7 @@ describe('Agent automation workflows', () => {
       workflows: ['Agent Issues', 'Agent PR Rework', 'Agent PR Review'],
       types: ['completed'],
     })
+    expect(workflowJob(recovery, 'recover').if).toContain('["failure", "cancelled"]')
     expect(workflowJob(recovery, 'recover').if).toContain('github.event.workflow_run.conclusion')
     expect(workflowJob(landing, 'land-reviewed-pr').if).toContain('vars.DSH_AUTOMATION_CI_WORKFLOW')
     expect(health.on).toEqual({ workflow_dispatch: null })

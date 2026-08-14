@@ -182,20 +182,16 @@ export function requiresPullRequestPolicy({
 /**
  * Translate a repository event into one resolving-Issue lifecycle command.
  * @param {string} eventName GitHub event name.
- * @param {{action?: string, review?: {state?: string}}} event GitHub event payload.
+ * @param {{action?: string, label?: {name?: string}}} event GitHub event payload.
  * @returns {'implementation'|'review-requested'|'changes-requested'|null} Lifecycle command.
  */
 export function resolvingIssueStatusCommand(eventName, event) {
-  if (eventName === 'pull_request') {
+  if (eventName === 'pull_request_target') {
     if (event.action === 'review_requested') return 'review-requested'
+    if (event.action === 'labeled' && event.label?.name === 'automation/review-blocked') {
+      return 'changes-requested'
+    }
     return IMPLEMENTATION_PULL_REQUEST_ACTIONS.has(event.action) ? 'implementation' : null
-  }
-  if (
-    eventName === 'pull_request_review' &&
-    event.action === 'submitted' &&
-    event.review?.state?.toLowerCase() === 'changes_requested'
-  ) {
-    return 'changes-requested'
   }
   return null
 }
@@ -688,7 +684,7 @@ async function runLifecycle(eventName, event) {
     return
   }
 
-  if (eventName === 'pull_request' || eventName === 'pull_request_review') {
+  if (eventName === 'pull_request_target') {
     const command = resolvingIssueStatusCommand(eventName, event)
     if (!command) return
     const pull = await lifecyclePullRequestSnapshot(event.pull_request.number)
