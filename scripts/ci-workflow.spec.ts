@@ -394,7 +394,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = 'ab8ec700bee21e09e389849aa3a588ec745def07'
+  const controllerSha = '624a3f3739dcfa371d3e25054768ac242cddf699'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
