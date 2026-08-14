@@ -16,6 +16,6 @@ jobs:
     if: >-
       contains(fromJSON('["failure", "cancelled"]'), github.event.workflow_run.conclusion)
       && github.event.workflow_run.name != github.workflow
-    uses: Ornn8/dsh-agent-automation/.github/workflows/recover-backlog.yml@0060b93aba9436bb5b672308d0c1c9756b9e2f77
+    uses: Ornn8/dsh-agent-automation/.github/workflows/recover-backlog.yml@f7eb46e73b7190c06bd1428809ec0fb95965da4a
     with:
       source_run_id: ${{ github.event.workflow_run.id }}
