@@ -406,6 +406,7 @@ describe('Agent automation workflows', () => {
       '.github/workflows/agent-pr-ci-repair.yml',
       '.github/workflows/agent-pr-review.yml',
       '.github/workflows/agent-pr-rework.yml',
+      '.github/workflows/agent-recovery.yml',
     ]
 
     for (const path of paths) {
