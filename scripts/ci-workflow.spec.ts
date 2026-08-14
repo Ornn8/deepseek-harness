@@ -384,9 +384,55 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
     expect(lifecycleJob.if).toBe(
-      "${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}",
+      "${{ (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) && vars.DSH_ISSUE_APP_CLIENT_ID != '' }}",
     )
     expect(policyPullRequest.types).toContain('ready_for_review')
+  })
+})
+
+describe('Agent automation workflows', () => {
+  const controllerSha = 'f084384617a5db8bbe5c8c96ddf86d7b10f4291c'
+
+  it('pins every reusable controller call to one immutable revision', () => {
+    const paths = [
+      '.github/workflows/agent-health.yml',
+      '.github/workflows/agent-issues.yml',
+      '.github/workflows/agent-pr-land.yml',
+      '.github/workflows/agent-pr-review.yml',
+      '.github/workflows/agent-pr-rework.yml',
+    ]
+
+    for (const path of paths) {
+      const workflow = loadWorkflow(path)
+      if (!isRecord(workflow.jobs)) throw new TypeError(`${path} must define jobs`)
+      for (const job of Object.values(workflow.jobs)) {
+        if (!isRecord(job) || typeof job.uses !== 'string') continue
+        expect(job.uses).toMatch(new RegExp(`^Ornn8/dsh-agent-automation/.+@${controllerSha}$`))
+        expect(job.with).toMatchObject({ controller_sha: controllerSha })
+      }
+    }
+  })
+
+  it('separates review publication, repair wakeups, landing, and model-free health', () => {
+    const review = loadWorkflow('.github/workflows/agent-pr-review.yml')
+    const rework = loadWorkflow('.github/workflows/agent-pr-rework.yml')
+    const landing = loadWorkflow('.github/workflows/agent-pr-land.yml')
+    const health = loadWorkflow('.github/workflows/agent-health.yml')
+
+    expect(review.permissions).toEqual({
+      contents: 'write',
+      issues: 'write',
+      'pull-requests': 'write',
+      statuses: 'write',
+    })
+    expect(workflowEvent(review, 'repository_dispatch')).toEqual({ types: ['dsh-review'] })
+    expect(workflowEvent(rework, 'repository_dispatch')).toEqual({ types: ['dsh-repair'] })
+    expect(workflowEvent(rework, 'pull_request')).toEqual({ types: ['labeled'] })
+    expect(workflowJob(rework, 'dsh-repair').if).toContain("github.event.label.name == 'automation/review-blocked'")
+    expect(workflowEvent(landing, 'repository_dispatch')).toEqual({ types: ['dsh-land'] })
+    expect(workflowEvent(landing, 'workflow_run')).toEqual({ workflows: ['CI'], types: ['completed'] })
+    expect(health.on).toEqual({ workflow_dispatch: null })
+    expect(health.permissions).toEqual({ contents: 'read' })
   })
 })
 

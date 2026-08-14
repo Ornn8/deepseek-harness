@@ -1,0 +1,14 @@
+name: Agent Pipeline Health
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@f084384617a5db8bbe5c8c96ddf86d7b10f4291c
+    with:
+      repository: ${{ github.repository }}
+      controller_sha: f084384617a5db8bbe5c8c96ddf86d7b10f4291c
