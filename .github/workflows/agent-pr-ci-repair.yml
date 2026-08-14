@@ -1,8 +1,9 @@
 name: Agent PR CI Repair
 
+# Configure DSH_AUTOMATION_CI_WORKFLOW to "CI" before enabling this listener.
+
 on:
   workflow_run:
-    workflows: [CI]
     types: [completed]
 
 permissions:
@@ -11,14 +12,12 @@ permissions:
 jobs:
   dsh-ci-repair:
     if: >-
-      github.event.workflow_run.conclusion == 'failure'
+      github.event.workflow_run.name == vars.DSH_AUTOMATION_CI_WORKFLOW
+      && github.event.workflow_run.conclusion == 'failure'
       && github.event.workflow_run.pull_requests[0].number != null
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@0f313148b2853f9573d386c8012972675059d89e
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@9294448e7ee8d7628ee828d0980162e894e26b63
     with:
-      repository: ${{ github.repository }}
       pull_request_number: ${{ github.event.workflow_run.pull_requests[0].number }}
       head_sha: ${{ github.event.workflow_run.head_sha }}
       request_id: ${{ format('ci-run-{0}-{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt) }}
-      controller_sha: 0f313148b2853f9573d386c8012972675059d89e
-      worker_id: dsh
-      runner_labels_json: '["self-hosted","Windows","X64","agent-change"]'
+      ci_workflow_name: ${{ vars.DSH_AUTOMATION_CI_WORKFLOW }}

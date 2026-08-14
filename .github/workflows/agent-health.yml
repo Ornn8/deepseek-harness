@@ -9,18 +9,12 @@ permissions:
 jobs:
   review-worker:
     name: review worker
-    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@0f313148b2853f9573d386c8012972675059d89e
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@9294448e7ee8d7628ee828d0980162e894e26b63
     with:
-      repository: ${{ github.repository }}
-      controller_sha: 0f313148b2853f9573d386c8012972675059d89e
-      worker_id: codex
-      runner_labels_json: '["self-hosted","Windows","X64","agent-reviewer"]'
+      role: review
 
   change-worker:
     name: change worker
-    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@0f313148b2853f9573d386c8012972675059d89e
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@9294448e7ee8d7628ee828d0980162e894e26b63
     with:
-      repository: ${{ github.repository }}
-      controller_sha: 0f313148b2853f9573d386c8012972675059d89e
-      worker_id: dsh
-      runner_labels_json: '["self-hosted","Windows","X64","agent-change"]'
+      role: change

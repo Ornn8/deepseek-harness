@@ -17,27 +17,29 @@ Status: implemented
 
 每项检查都从它实际运行的仓库推导坐标，而不是写死上游仓库；依赖 App 的 lifecycle 在其凭据缺失时变为惰性（inert）。
 
+失败或取消的顶层 Agent Issues 与 Agent PR Rework run 现在进入独立的事件驱动恢复工作流。恢复控制器验证 source run 的 `referenced_workflows` 中精确的可复用 controller SHA，定位匹配的持久 Issue 或 pull request 状态记录，重新检查实时 Issue 状态或精确 PR head，并且最多记录三次重试。评论和标签仍是审计投影；伪造记录不能授权重试。第三次耗尽后保留 `agent/dsh-failed` dead-letter，且不会调用模型。
+
 `policy.mjs` 将 `process.env.GITHUB_REPOSITORY`（`owner/repo`）拆分为 `organization` 与 `repository`，并优先于 `config.json` 的默认值使用；本地与测试运行未设置该变量，保持检入的默认值。所有原先内插 `config.organization`/`config.repository` 的 REST/GraphQL 路径现在都内插这两个推导常量。
 
 `issue-lifecycle.yml` 在作业级 `if` 上加入 `vars.DSH_ISSUE_APP_CLIENT_ID != ''`，使无凭据的仓库（包括本 fork）跳过作业而不是令其失败，并从 `github.repository_owner` 与 `github.event.repository.name` 推导 App 安装归属，使安装了 App 的 fork 指向自身安装而非上游。
 
-`build-exe-for-python-sdk.yml` 在 `Install (immutable)` 步骤上设置 `NODE_OPTIONS: --preserve-symlinks`。于是 Node 把 `require('node-addon-api')` 解析到 node-pty 下的符号链接路径，而非解析后的同级存储路径，gyp 也就把 `node_addon_api*` 子 Makefile 写到 node-pty 下，并带有一个稳定的相对引用，manylinux 重建即可复用而不再遇到缺失的目标文件。
+`build-exe-for-python-sdk.yml` 以 pnpm 的 hoisted linker 安装原生构建作业。node-gyp 会针对稳定的作业级布局写入 node-addon-api 依赖路径，再将 node-pty Makefile 挂载进 manylinux 容器；生成的 Makefile 不再依赖容器中缺失的包存储相对路径。
 
-目标仓库用相互独立的薄工作流替换组合调用器，分别负责 Issue 分发、精确版本对 PR 审核、可信返工反馈、显式落地和按需健康检查。每个可复用工作流及其控制器 checkout 都使用专用 `Ornn8/dsh-agent-automation` 仓库中的同一个完整 commit SHA，因此控制器升级会成为目标仓库内一次可审核的改动。
+目标仓库用相互独立的工作流负责 Issue 分发、精确版本对 PR 审核、可信返工反馈、显式落地和健康检查。每个调用方在 `uses` 中固定可复用工作流 revision；控制器 revision、角色 worker 和 runner 选择由控制器持有，不再作为调用方输入。包括项目生命周期和 Issue policy 在内的所有特权 PR listener 都使用 `pull_request_target` 并签出默认分支 policy，因此 PR 在进入默认分支前不能替换特权工作流定义。review-submitted 事件不再作为特权输入；自动化 BLOCK 标签会通过可信 target listener 进入同一生命周期。
 
 自动化仓库公开一套统一的 Agent Worker 调用与终态回执接口。运行时专用 Adapter 负责启动和观察 DSH Web、ChatGPT Desktop 或使用 JSON 协议的命令；目标工作流把 `review` 与 `change` 角色映射到已配置的 worker id。两个角色分别使用 `agent-reviewer` 与 `agent-change` runner 注册、进程、工作目录、并发组和健康检查作业。
 
-审核 worker 获得精确 base/head checkout，不获得 Actions 凭据，并只做只读检查。作业级 Actions token 发布 pending 或最终 `codex/review` 兼容状态、英文审核评论和投影标签。BLOCK 结论记录精确版本对；控制器通过共享的主机 GitHub 身份发布一个不可变、幂等、面向 `change` 角色的 `agent_work_requested` WorkRequest 后，审核任务即终止。接收工作流独立启动，校验 WorkRequest 字段、实时 head、审核标记和标签，再调用其配置的变更 worker。已完成且失败的 `CI` workflow run 会创建一个由 run id 和 attempt 标识的独立请求；只有工作流名为 `CI`、结论为失败、PR 编号匹配且 head 正是当前值时，控制器才允许变更 worker 检查日志或修改分支。
+审核 worker 获得精确 base/head checkout，不获得 Actions 凭据，并只做只读检查。作业级 Actions token 发布 pending 或最终 `codex/review` 兼容状态、英文审核评论和投影标签。BLOCK 结论记录精确版本对；控制器发布一个不可变、幂等、面向 `change` 角色的 `agent_work_requested` WorkRequest 后，审核任务即终止。接收工作流独立启动，校验 WorkRequest 字段、实时 head、审核标记和标签，再调用其配置的变更 worker。名称等于 `DSH_AUTOMATION_CI_WORKFLOW` 的已完成失败工作流会创建一个由 run id 和 attempt 标识的独立请求；只有名称、失败结论、PR 编号和当前 head 全部匹配时，控制器才允许变更 worker 检查日志或修改分支。
 
-PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制器只接受当前指向 `master` 的非草稿 PR，要求精确 base/head PASS 记录和所有实时分支保护上下文均成功，在 squash merge 前立即重复这些检查，否则不改变 PR 即退出。成功的 `CI` workflow run 会在待定检查完成后重试落地。
+PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制器只接受当前指向仓库默认分支的非草稿 PR，要求精确 base/head PASS 记录和所有实时分支保护上下文均成功，在 squash merge 前立即重复这些检查，否则不改变 PR 即退出。成功的已配置 CI workflow run 会在待定检查完成后重试落地。
 
-每次向 `master` 推送后，协调器只为当前 base/head 对既没有已完成审核、也没有待处理审核的同仓库开放 PR 分发审核；草稿、落后以及已有覆盖的 PR 会被跳过。手动健康工作流在各自 runner 上分别检查每个已配置 worker，并检查固定控制器与 GitHub 访问，全程不调用模型。
+每次向仓库默认分支推送后，协调器只为当前 base/head 对既没有已完成审核、也没有待处理审核的同仓库开放 PR 分发审核；草稿、落后以及已有覆盖的 PR 会被跳过。手动健康工作流在各自 runner 上分别检查每个已配置 worker，并检查固定控制器与 GitHub 访问，全程不调用模型。
 
 ## Alternatives considered
 
-**保留主机 Makefile，在容器内修补损坏路径。** 在 `make` 前创建缺失的 `node_addon_api*.target.mk` 文件（空文件或手写 stamp 规则）能掩盖符号链接导致的路径问题，却不能修复其根因，而且确切的 stamp 名称必须跟随 gyp 的输出命名；保符号链接的 configure 则在源头修正了生成过程。
+**保留主机 Makefile，在容器内修补损坏路径。** 在 `make` 前创建缺失的 `node_addon_api*.target.mk` 文件（空文件或手写 stamp 规则）能掩盖符号链接导致的路径问题，却不能修复其根因，而且确切的 stamp 名称必须跟随 gyp 的输出命名；hoisted linker 安装会在源头修正生成的依赖路径。
 
-**用 `node-linker=hoisted` 提升 node-addon-api。** 提升会改变整个安装布局，而 single-exe 部署步骤已经按阶段精心选择布局（闭包用 `--config.node-linker=hoisted`，源码安装用 isolated），为一个原生插件而做更宽泛的布局变更代价过大。
+**保留 `NODE_OPTIONS=--preserve-symlinks`。** 失败的 hosted run 证明它未能改变生成的依赖路径；它还会影响安装步骤的全部 Node 进程，而不是选择可让 node-gyp 可复现生成路径的安装布局。
 
 **用步骤级守卫根据私钥为 lifecycle 设门。** 步骤级守卫能检测 `secrets`，但被跳过的作业才是需求所指定的显式「惰性」状态；`vars.DSH_ISSUE_APP_CLIENT_ID` 与私钥在拥有 App 的仓库中一同设置，因此作业级变量检测是正确且充分的 fork 安全条件。
 
@@ -53,7 +55,7 @@ PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制�
 
 若某个 fork 日后安装了 issue-management App 并希望获得 lifecycle 状态更新，仍需提供匹配的 ProjectV2（`config.json` 仍写死上游的 Project 编号与标题）以及两样 App 凭据；本次工作流级改动只是让凭据缺失不再致命、让 App 安装归属自寻，并不会为 fork 配置 Project。
 
-`--preserve-symlinks` 作用于安装步骤中的每一个 Node 进程，而不仅是 node-gyp。它被限定在这一个构建作业的安装步骤内；未来若有原生依赖的 postinstall 依赖「把 pnpm 符号链接解析为真实路径」，需要做同样的根因复核，而不是直接大范围移除该标志。
+hoisted linker 被限定在原生构建作业中。若其他原生依赖的生命周期依赖 isolated pnpm store 路径，必须先完成自身的兼容性复核，再改变该作业的布局。
 
 目标仓库现在包含更多工作流入口文件，但其逻辑仍位于专用自动化仓库，固定 revision 也让已部署控制器可审计。标签继续作为操作者可见的投影和恢复触发器，而不是批准证据；评论包含精确版本对和可见的 DSH 或 Codex 任务标识，足以监管一次运行。CI 失败返工完全由事件驱动，检查为绿色时不会产生任何模型活动。
 

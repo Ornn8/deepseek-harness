@@ -345,6 +345,8 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
+    expect(JSON.stringify(workflow)).toContain('--config.node-linker=hoisted')
+    expect(JSON.stringify(workflow)).not.toContain('NODE_OPTIONS: --preserve-symlinks')
     expect(macosCheck).toMatchObject({ if: "runner.os == 'macOS'" })
     expect(JSON.stringify(macosCheck)).toContain('scripts/check-macos-deployment-target.py')
     expect(JSON.stringify(macosCheck)).toContain('$EXE-spawn-helper')
@@ -374,24 +376,22 @@ describe('Python release workflows', () => {
 describe('Issue lifecycle workflow', () => {
   it('uses explicit review handoff events without rerunning when a draft becomes ready', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
-    const lifecyclePullRequest = workflowEvent(lifecycle, 'pull_request')
-    const lifecycleReview = workflowEvent(lifecycle, 'pull_request_review')
+    const lifecyclePullRequest = workflowEvent(lifecycle, 'pull_request_target')
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
-    const policyPullRequest = workflowEvent(policy, 'pull_request')
+    const policyPullRequest = workflowEvent(policy, 'pull_request_target')
 
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
-    expect(lifecycleReview.types).toEqual(['submitted'])
-    expect(lifecycleJob.if).toBe(
-      "${{ (github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested')) && vars.DSH_ISSUE_APP_CLIENT_ID != '' }}",
-    )
+    expect(lifecycle.on).not.toHaveProperty('pull_request')
+    expect(lifecycle.on).not.toHaveProperty('pull_request_review')
+    expect(lifecycleJob.if).toBe("${{ vars.DSH_ISSUE_APP_CLIENT_ID != '' }}")
     expect(policyPullRequest.types).toContain('ready_for_review')
   })
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = '0f313148b2853f9573d386c8012972675059d89e'
+  const controllerSha = '9294448e7ee8d7628ee828d0980162e894e26b63'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
@@ -409,7 +409,10 @@ describe('Agent automation workflows', () => {
       for (const job of Object.values(workflow.jobs)) {
         if (!isRecord(job) || typeof job.uses !== 'string') continue
         expect(job.uses).toMatch(new RegExp(`^Ornn8/dsh-agent-automation/.+@${controllerSha}$`))
-        expect(job.with).toMatchObject({ controller_sha: controllerSha })
+        expect(job.with ?? {}).not.toHaveProperty('controller_sha')
+        expect(job.with ?? {}).not.toHaveProperty('worker_id')
+        expect(job.with ?? {}).not.toHaveProperty('runner_labels_json')
+        expect(job.with ?? {}).not.toHaveProperty('repository')
       }
     }
   })
@@ -419,39 +422,94 @@ describe('Agent automation workflows', () => {
     const rework = loadWorkflow('.github/workflows/agent-pr-rework.yml')
     const ciRepair = loadWorkflow('.github/workflows/agent-pr-ci-repair.yml')
     const landing = loadWorkflow('.github/workflows/agent-pr-land.yml')
+    const recovery = loadWorkflow('.github/workflows/agent-recovery.yml')
     const health = loadWorkflow('.github/workflows/agent-health.yml')
+    const issues = loadWorkflow('.github/workflows/agent-issues.yml')
 
     expect(review.permissions).toEqual({
+      checks: 'write',
       contents: 'write',
       issues: 'write',
       'pull-requests': 'write',
-      statuses: 'write',
     })
-    expect(workflowEvent(review, 'repository_dispatch')).toEqual({ types: ['dsh-review'] })
+    expect(issues.permissions).toEqual({
+      actions: 'read',
+      checks: 'read',
+      contents: 'write',
+      issues: 'write',
+      'pull-requests': 'write',
+    })
+    expect(landing.permissions).toEqual({
+      actions: 'read',
+      checks: 'read',
+      contents: 'write',
+      issues: 'read',
+      'pull-requests': 'write',
+    })
+    expect(workflowEvent(review, 'pull_request_target')).toEqual({
+      types: ['opened', 'reopened', 'synchronize', 'ready_for_review', 'labeled', 'edited'],
+    })
+    expect(review.on).not.toHaveProperty('repository_dispatch')
+    expect(workflowJob(review, 'codex-review').if).not.toContain('repository_dispatch')
     expect(workflowEvent(rework, 'repository_dispatch')).toEqual({
       types: ['dsh-repair', 'agent_work_requested'],
     })
-    expect(workflowEvent(rework, 'pull_request')).toEqual({ types: ['labeled'] })
     const repair = workflowJob(rework, 'dsh-repair')
     expect(repair.if).toContain('agent_work_requested')
     expect(repair.if).toContain("github.event.client_payload.role == 'change'")
-    expect(repair.if).toContain('["automation/review-blocked","automation/ci-failed"]')
-    expect(repair.with).toMatchObject({
-      worker_id: 'dsh',
-      runner_labels_json: '["self-hosted","Windows","X64","agent-change"]',
-    })
-    expect(workflowJob(review, 'codex-review').with).toMatchObject({
-      worker_id: 'codex',
-      runner_labels_json: '["self-hosted","Windows","X64","agent-reviewer"]',
-    })
-    expect(workflowEvent(ciRepair, 'workflow_run')).toEqual({ workflows: ['CI'], types: ['completed'] })
+    expect(rework.on).not.toHaveProperty('pull_request')
+    expect(rework.on).not.toHaveProperty('pull_request_review')
+    expect(rework.on).not.toHaveProperty('pull_request_review_comment')
+    expect(workflowEvent(ciRepair, 'workflow_run')).toEqual({ types: ['completed'] })
+    expect(workflowJob(ciRepair, 'dsh-ci-repair').if).toContain('vars.DSH_AUTOMATION_CI_WORKFLOW')
     expect(workflowJob(ciRepair, 'dsh-ci-repair').if).toContain("github.event.workflow_run.conclusion == 'failure'")
+    expect(workflowJob(ciRepair, 'dsh-ci-repair').with).toHaveProperty(
+      'ci_workflow_name', '${{ vars.DSH_AUTOMATION_CI_WORKFLOW }}',
+    )
+    expect(repair.with).toHaveProperty(
+      'ci_workflow_name', '${{ vars.DSH_AUTOMATION_CI_WORKFLOW }}',
+    )
     expect(workflowEvent(landing, 'repository_dispatch')).toEqual({ types: ['dsh-land'] })
-    expect(workflowEvent(landing, 'workflow_run')).toEqual({ workflows: ['CI'], types: ['completed'] })
+    expect(workflowEvent(landing, 'workflow_run')).toEqual({ types: ['completed'] })
+    expect(workflowEvent(recovery, 'workflow_run')).toEqual({
+      workflows: ['Agent Issues', 'Agent PR Rework', 'Agent PR Review'],
+      types: ['completed'],
+    })
+    expect(workflowJob(recovery, 'recover').if).toContain('github.event.workflow_run.conclusion')
+    expect(workflowJob(landing, 'land-reviewed-pr').if).toContain('vars.DSH_AUTOMATION_CI_WORKFLOW')
     expect(health.on).toEqual({ workflow_dispatch: null })
     expect(health.permissions).toEqual({ contents: 'read' })
-    expect(workflowJob(health, 'review-worker').with).toMatchObject({ worker_id: 'codex' })
-    expect(workflowJob(health, 'change-worker').with).toMatchObject({ worker_id: 'dsh' })
+    expect(workflowJob(health, 'review-worker').with).toEqual({ role: 'review' })
+    expect(workflowJob(health, 'change-worker').with).toEqual({ role: 'change' })
+    expect(issues.on).toHaveProperty('push', null)
+    expect(workflowJob(issues, 'dsh-backlog').if).toContain('github.event.repository.default_branch')
+    expect(workflowJob(issues, 'reconcile-reviews').if).toContain('github.event.repository.default_branch')
+  })
+})
+
+describe('Issue policy listener', () => {
+  it('always executes the trusted default-branch policy', () => {
+    const workflow = loadWorkflow('.github/workflows/issue-policy.yml')
+    const policy = workflowJob(workflow, 'policy')
+
+    expect(workflow.permissions).toEqual({
+      contents: 'read',
+      issues: 'read',
+      'pull-requests': 'read',
+    })
+    expect(workflowEvent(workflow, 'pull_request_target')).toEqual({
+      types: ['opened', 'edited', 'synchronize', 'reopened', 'labeled', 'unlabeled', 'ready_for_review', 'review_requested'],
+    })
+    expect(workflow.on).not.toHaveProperty('pull_request')
+    expect(workflow.on).not.toHaveProperty('pull_request_review')
+    if (!Array.isArray(policy.steps)) throw new TypeError('Issue policy must define its steps')
+    const checkout = policy.steps.filter(isRecord).find(step => step.name === 'Check out trusted policy')
+    expect(checkout).toMatchObject({
+      with: {
+        ref: '${{ github.event.repository.default_branch }}',
+        'persist-credentials': false,
+      },
+    })
   })
 })
 

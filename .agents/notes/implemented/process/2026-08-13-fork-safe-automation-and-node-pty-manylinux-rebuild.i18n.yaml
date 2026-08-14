@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-13-fork-safe-automation-and-node-pty-manylinux-rebuild.md
-2026-08-13-fork-safe-automation-and-node-pty-manylinux-rebuild.md: 04ab2a9ca725bcbad4f1ef9a4d7ba000b81a6045
-2026-08-13-fork-safe-automation-and-node-pty-manylinux-rebuild.zh.md: 29eb72a5a3dfa6cdda7aaf41c9e916b7deca0386
+2026-08-13-fork-safe-automation-and-node-pty-manylinux-rebuild.md: 2142e1b4ca0e7119acd16cc37b5d2fa6df76f605
+2026-08-13-fork-safe-automation-and-node-pty-manylinux-rebuild.zh.md: ad6dd26f13cae68e8683b3cfb56949d5a8b94acc
