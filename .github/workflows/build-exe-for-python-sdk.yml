@@ -198,10 +198,15 @@ jobs:
           # node-gyp writes the node-addon-api target files included by the
           # generated Makefile outside the package directory, so pnpm's
           # side-effects cache restores build/ without them; a cached install
-          # then leaves a Makefile whose includes resolve nowhere. Regenerate
-          # the build state so the container rebuild starts from a consistent
+          # then leaves a Makefile whose includes resolve nowhere. A bare
+          # `pnpm rebuild node-pty` from the workspace root skips node-pty
+          # because it is only a transitive dependency, and a restore would
+          # hand the poisoned build/ back anyway. The recursive form actually
+          # runs node-pty's install script (node scripts/prebuild.js || node-gyp
+          # rebuild) in every depending project, regenerating build/ and the
+          # mirror files so the container rebuild starts from a consistent
           # layout.
-          pnpm rebuild node-pty
+          pnpm rebuild -r node-pty
           [ -f "$addon_dir/build/Makefile" ] || {
             echo "::error::node-pty install did not generate $addon_dir/build/Makefile"
             exit 1

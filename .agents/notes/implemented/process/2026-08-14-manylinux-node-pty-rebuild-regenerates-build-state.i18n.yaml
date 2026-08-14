@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-14-manylinux-node-pty-rebuild-regenerates-build-state.md
-2026-08-14-manylinux-node-pty-rebuild-regenerates-build-state.md: 79b4189547089c0335b8873b3a34ce9d10ee4271
-2026-08-14-manylinux-node-pty-rebuild-regenerates-build-state.zh.md: 63119dd84d99587f847f6d8ee47f303600d05a59
+2026-08-14-manylinux-node-pty-rebuild-regenerates-build-state.md: 9b89030c4947c7f9f75d647e8eaf511cca24d1fa
+2026-08-14-manylinux-node-pty-rebuild-regenerates-build-state.zh.md: 90636e1360eda9b496bb43ea009b8eb55cef2bbd
