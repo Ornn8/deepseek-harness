@@ -1,8 +1,10 @@
 /**
  * @deepseek-ai/dsh-host-frontend-static — SPA dist server over the webserver
  * fallback seat: serves the built frontend directory with the semantics the
- * Web shell locked at step1 — traversal outside the dist root is 403, any
- * miss falls back to index.html with HTTP 200 (SPA routing), unknown
+ * Web shell locked at step1 — traversal outside the dist root is 403, an
+ * intentional miss (ENOENT, or a real directory below the root) falls back to
+ * index.html with HTTP 200 (SPA routing), any other static read failure
+ * propagates to the webserver request guard and answers 500, unknown
  * extensions ship as octet-stream, non-GET/HEAD is 405. Every index response
  * runs through the webserver's registered index taps (boot-manifest
  * injection). The dist location is workspace knowledge of the composing
@@ -15,8 +17,8 @@ import type { ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { BadRequestError } from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-host-webserver'
 
 /** Stable Cordis plugin name. */
 export const name = 'frontend-static'
@@ -42,6 +44,17 @@ const MIME: Record<string, string> = {
   '.json': 'application/json',
   '.map': 'application/json',
   '.webmanifest': 'application/manifest+json',
+}
+
+/** Whether a readFile rejection is an intentional SPA miss (ENOENT, or EISDIR
+ * when the target is a real directory below the root) that falls back to
+ * index.html. Every other code is a server-side failure. */
+function isStaticMiss(error: unknown): boolean {
+  /* v8 ignore next -- readFile rejects only with Error objects; a non-Error
+  rejection would carry no code and is not a miss. */
+  if (!(error instanceof Error)) return false
+  const code = (error as NodeJS.ErrnoException).code
+  return code === 'ENOENT' || code === 'EISDIR'
 }
 
 /**
@@ -79,8 +92,13 @@ export async function serveStatic(
     const body = await readFile(target)
     res.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' })
     res.end(body)
-  } catch {
-    // Miss (ENOENT/EISDIR) falls back to index.html with 200 (SPA routing).
+  } catch (error) {
+    // Intentional miss (ENOENT/EISDIR) falls back to index.html with 200 (SPA
+    // routing); any other read failure (EACCES, EMFILE, transient I/O) is a
+    // server-side fault and must not be masked as a successful index
+    // response — propagate it to the webserver request guard, which answers
+    // 500 and keeps the server alive.
+    if (!isStaticMiss(error)) throw error
     await serveIndex()
   }
 }
@@ -105,6 +123,14 @@ export function apply(ctx: Context, config: Config): void {
     }
     /* v8 ignore next -- node:http always sets url on server requests */
     const rawPath = new URL(req.url ?? '/', 'http://x').pathname
-    await serveStatic(decodeURIComponent(rawPath), res, distRoot, distIndex, renderIndex)
+    let pathname: string
+    try {
+      pathname = decodeURIComponent(rawPath)
+    } catch {
+      // Malformed %-escape is a client-input failure; classify it so the
+      // request guard answers 400 instead of 500.
+      throw new BadRequestError('malformed percent-encoding in request path')
+    }
+    await serveStatic(pathname, res, distRoot, distIndex, renderIndex)
   }), 'frontend-static: fallback seat')
 }

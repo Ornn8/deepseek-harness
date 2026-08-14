@@ -41,6 +41,19 @@ export interface WebUpgradeRoute {
   handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
 }
 
+/**
+ * A request rejected because the client input itself is malformed (a bad
+ * %-escape, an unparsable request target). Route and fallback handlers throw
+ * this to classify a failure as client error: the request guard answers 400
+ * and logs it. Any other rejection is an internal failure and answers 500.
+ */
+export class BadRequestError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'BadRequestError'
+  }
+}
+
 /** Gateway config: the listen address. */
 export interface Config {
   /** Listen host; the two supported values are loopback and all-interfaces. */
@@ -147,9 +160,16 @@ export class WebServer extends Service {
   /** Listen; resolves once the socket is bound (rejection = FAILED fiber). */
   async [Service.init](): Promise<void> {
     const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-      /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
-      requests; the field is only optional on the client-side IncomingMessage type */
-      const rawPath = new URL(req.url ?? '/', 'http://x').pathname
+      let rawPath: string
+      try {
+        /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
+        requests; the field is only optional on the client-side IncomingMessage type */
+        rawPath = new URL(req.url ?? '/', 'http://x').pathname
+      } catch {
+        // A request target node:http accepts but the URL parser rejects (e.g.
+        // absolute-form with an out-of-range port) is client input error.
+        throw new BadRequestError('malformed request target')
+      }
       const route = this.match(rawPath)
       if (route !== undefined) {
         await route.handler(req, res)
@@ -165,8 +185,10 @@ export class WebServer extends Service {
     }
     // Last-resort guard: handle() rejecting would otherwise be an unhandled
     // rejection killing the process on one malformed request (bad %-escape,
-    // client dropping mid-body). Per-request failures log and answer 400 —
-    // never a process exit.
+    // client dropping mid-body) or one internal handler failure. Per-request
+    // failures log and answer 400 when the rejection is a BadRequestError
+    // (client input error), otherwise 500 (internal failure) — never a
+    // process exit and never a client error masking a server fault.
     this.server = createServer((req, res) => {
       handle(req, res).catch((err: unknown) => {
         this.ctx.logger.warn(err instanceof Error ? err : new Error(String(err)))
@@ -174,7 +196,7 @@ export class WebServer extends Service {
           res.destroy()
           return
         }
-        res.writeHead(400)
+        res.writeHead(err instanceof BadRequestError ? 400 : 500)
         res.end()
       })
     })
