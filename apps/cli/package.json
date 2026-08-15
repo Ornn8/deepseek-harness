@@ -23,7 +23,8 @@
   },
   "files": [
     "lib/*.js",
-    "config"
+    "config",
+    "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "dependencies": {

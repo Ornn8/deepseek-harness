@@ -52,11 +52,15 @@ const releaseMemberDirectory = /^(?:packages\/[^/]+\/[^/]+|apps\/[^/]+|vendor\/[
 
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/dsh': ['lib/*.js', 'config'],
+  // The CLI publishes its tsdown bundles beside the tsc-emitted declaration
+  // tree that the ./profile-boot export's types condition targets.
+  '@deepseek-ai/dsh': ['lib/*.js', 'config', 'lib/types/**/*.d.ts'],
   // The Web build emits sourcemaps for browser debugging; publishing them is
   // what the payload policy forbids, so the bundle ships without them.
   '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
-  '@deepseek-ai/dsh-desktop': ['lib/*.js'],
+  // The desktop shell publishes its main-process bundle beside the
+  // declarations its root types condition targets.
+  '@deepseek-ai/dsh-desktop': ['lib/*.js', 'lib/types/**/*.d.ts'],
 }
 
 /** The subset of package.json fields this constraint check cares about. */
