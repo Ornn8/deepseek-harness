@@ -12,6 +12,7 @@
     "apps/web/tests/default-model.e2e.ts",
     "apps/web/tests/declared-reasoning.e2e.ts",
     "apps/web/tests/support.ts",
+    "apps/web/tests/visual-baseline.e2e.ts",
     "apps/web/tests/scaffold-hermetic.e2e.ts",
     "apps/web/tests/minimal-preset.snapshot.ts",
     "apps/web/tests/message-feedback-protocol.snapshot.ts",
