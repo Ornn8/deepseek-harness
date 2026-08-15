@@ -383,8 +383,22 @@ async function acquireInstallLock(commonDirectory) {
   const deadline = Date.now() + INSTALL_LOCK_TIMEOUT_MS
   const ownedRecord = `${String(process.pid)} ${randomUUID()}\n`
   let initializingLock
+  let createAttempts = 0
   while (true) {
+    createAttempts += 1
     try {
+      // Test hook: make the first exclusive create report the transient EPERM
+      // a Windows release can leave behind, proving it is retried as contention.
+      // The lock must be visible, as it is in the delete-pending race.
+      if (
+        process.env.DSH_TEST_LEFTHOOK_EPERM_ONCE === '1'
+        && createAttempts === 1
+        && installLockStat(lockPath) !== undefined
+      ) {
+        const transientError = new Error(`EPERM: operation not permitted, open ${JSON.stringify(lockPath)}`)
+        transientError.code = 'EPERM'
+        throw transientError
+      }
       const lockHandle = openSync(lockPath, 'wx', 0o600)
       let ownedStat
       try {
@@ -409,7 +423,13 @@ async function acquireInstallLock(commonDirectory) {
       }
       return () => releaseInstallLock(lockPath, ownedRecord, ownedStat)
     } catch (error) {
-      if (errorCode(error) !== 'EEXIST') throw error
+      const code = errorCode(error)
+      // A Windows exclusive create that races a concurrent release reports
+      // EPERM (the released name is briefly delete-pending) instead of
+      // EEXIST; when the lock file is still visible, treat it as contention.
+      const contention = code === 'EEXIST'
+        || (process.platform === 'win32' && code === 'EPERM' && installLockStat(lockPath) !== undefined)
+      if (!contention) throw error
       const existingStat = installLockStat(lockPath)
       if (existingStat === undefined) continue
       if (!existingStat.isFile() || existingStat.isSymbolicLink()) {
