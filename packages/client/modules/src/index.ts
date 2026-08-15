@@ -29,7 +29,7 @@ import { dirname, join } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import { BadRequestError } from '@deepseek-ai/dsh-host-webserver'
 import type { WebBootEntry, WebBootGraph } from './client/manifest.ts'
 
 export type {
@@ -425,7 +425,14 @@ export class ClientModuleRegistry extends Service {
       return
     }
     /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server requests. */
-    const pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)
+    let pathname: string
+    try {
+      pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)
+    } catch {
+      // Malformed %-escape in a bundle URL is client input error, classified
+      // for the webserver request guard (400, not 500).
+      throw new BadRequestError('malformed percent-encoding in plugin bundle path')
+    }
     // The id may contain a scope slash. Anything else under /plugins (including
     // /plugins/events when the HMR row is absent) is an unknown resource.
     const prefix = '/plugins/'

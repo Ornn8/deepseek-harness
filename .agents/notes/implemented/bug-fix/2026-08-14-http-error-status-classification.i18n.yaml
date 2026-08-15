@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-14-http-error-status-classification.md
+2026-08-14-http-error-status-classification.md: e7f1f2511440d52e062122190cdd1cabbdd6617f
+2026-08-14-http-error-status-classification.zh.md: 36b4ebd0b91a84e9d2cacea0c23c0261b829435d

@@ -3,19 +3,36 @@
  * vendored Loader mounts the webserver and frontend-static rows, and every
  * assertion observes the served HTTP surface — asset serving, MIME fallback,
  * SPA index fallback with index taps, traversal rejection, 405 on non-GET/
- * HEAD, and seat release on fiber disposal (HMR safety).
+ * HEAD, error classification (malformed %-escape 400, EISDIR miss 200,
+ * non-miss read failure 500), and seat release on fiber disposal (HMR
+ * safety).
  */
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import HttpServer from '@deepseek-ai/dsh-host-webserver'
 import * as FrontendStatic from '../src/index.ts'
+
+// One deterministic non-miss read failure on every platform: any target whose
+// path contains "poison" rejects EACCES, standing in for permission errors,
+// descriptor exhaustion, and transient I/O failures. Everything else
+// delegates to the real implementation, so the composition stays real.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const readFile = ((path: Parameters<typeof actual.readFile>[0], options?: Parameters<typeof actual.readFile>[1]) => {
+    if (typeof path === 'string' && path.includes('poison')) {
+      return Promise.reject(Object.assign(new Error(`EACCES: permission denied, open '${path}'`), { code: 'EACCES' }))
+    }
+    return actual.readFile(path, options)
+  }) as typeof actual.readFile
+  return { ...actual, readFile }
+})
 
 let root: string | undefined
 let context: Context | undefined
@@ -37,6 +54,8 @@ async function loadComposition(): Promise<Context> {
   await writeFile(join(dist, 'app.js'), 'export {}')
   await writeFile(join(dist, 'blob.bin'), 'BLOB')
   await writeFile(join(dist, 'manifest.webmanifest'), '{}')
+  await writeFile(join(dist, 'poison.js'), 'export {}')
+  await mkdir(join(dist, 'subdir'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
     "- name: '@deepseek-ai/dsh-host-webserver'",
@@ -121,6 +140,17 @@ describe('real Loader composition', () => {
     // Traversal outside the dist root is 403; non-GET/HEAD is 405.
     expect((await request(port, '/..%2f..%2fetc%2fpasswd')).status).toBe(403)
     expect((await request(port, '/nowhere', { method: 'POST' })).status).toBe(405)
+
+    // Error classification: a malformed %-escape is client error (400); a
+    // real directory below the root is an intentional miss (index fallback,
+    // 200); a non-miss read failure (EACCES stand-in) is a server fault (500)
+    // — and the server survives all three.
+    expect((await request(port, '/%zz')).status).toBe(400)
+    const subdir = await request(port, '/subdir')
+    expect(subdir.status).toBe(200)
+    expect(subdir.body).toContain('shell')
+    expect((await request(port, '/poison.js')).status).toBe(500)
+    expect((await request(port, '/no/such/route')).status).toBe(200)
 
     // HMR safety: disposing the frontend row releases the fallback seat (the
     // unclaimed webserver answers 404) and the seat is claimable again.
