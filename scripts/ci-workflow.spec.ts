@@ -395,7 +395,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = '1921be278e3b48650d4cb717e857ef71f5fc6a96'
+  const controllerSha = '9f984bb552f16972a8d81d6775ae54280441bab1'
   const paths = [
     '.github/workflows/agent-health.yml',
     '.github/workflows/agent-issues.yml',

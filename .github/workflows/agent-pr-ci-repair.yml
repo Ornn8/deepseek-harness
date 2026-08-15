@@ -15,7 +15,7 @@ jobs:
     if: >-
       contains(fromJSON(vars.DSH_AUTOMATION_CI_WORKFLOWS), github.event.workflow_run.name)
       && github.event.workflow_run.conclusion == 'failure'
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@1921be278e3b48650d4cb717e857ef71f5fc6a96
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@9f984bb552f16972a8d81d6775ae54280441bab1
     with:
       pull_request_number: ${{ github.event.workflow_run.pull_requests[0].number || 0 }}
       head_sha: ${{ github.event.workflow_run.head_sha }}
