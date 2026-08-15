@@ -18,12 +18,15 @@ DSH_VISUAL_BASELINE=record pnpm run test:web:built -- -t visual-baseline
 - Theme: light by default; 04-conversation-seeded-dark records the `body[data-ds-dark-theme]` cascade
 - Platform: win32 x64 (10.0.19045)
 - Browser: Playwright Chromium 149.0.7827.55
-- Recorded: 2026-08-14T19:10:12.409Z
+- Recorded: 2026-08-15T06:59:52.591Z
 
 ## Caveats
 
 - Seeded-session captures show the scaffold temp workspace directory basename, which varies per run;
   treat that region as non-asserted (the aria lane normalizes the same value to {{workspace}}).
+- The workspace-picker capture (02-workspace-picker-dialog) shows the staged picker fixture under
+  the scaffold temp workspace, never the recording host's home directory (the dialog opens on the
+  browse backend's home default); its basename region varies per run and is non-asserted.
 - Pixel rendering (fonts, antialiasing) is platform-dependent; captures are authoritative for the
   recorded platform only, and the desktop implementation phase re-records on its own platform.
 

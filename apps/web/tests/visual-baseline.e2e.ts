@@ -17,6 +17,9 @@
 // standard/agent.cordis.yml), so the recorded shell states pick the platform's
 // live shell tool and its recorded fixture. Recording metadata records the
 // platform; later work compares captures recorded under the same conditions.
+// Privacy: the workspace-picker state is captured from a staged fixture
+// directory, never the recording host's home (the browse backend's default
+// listing target), so the committed PNGs carry no host directory or identity.
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { arch, platform, release } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +28,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Page } from 'playwright'
+import type { Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import {
@@ -47,6 +50,14 @@ const SHELL_TOOL = platform() === 'win32' ? 'pwsh' : 'bash'
 const SHELL_SEED = platform() === 'win32' ? PWSH_TERMINAL_SEED : NAVIGATION_PANES_SEED
 /** Content-search term that opens the platform shell seed's session. */
 const SHELL_SEARCH = platform() === 'win32' ? 'Run a PowerShell command' : 'WATERFALL'
+/**
+ * The picker fixture the workspace-picker capture shows: deterministic
+ * directory names staged inside the scaffold temp workspace, so the committed
+ * capture never shows the recording host's home directory.
+ */
+const PICKER_FIXTURE_ENTRIES = ['archive-2024', 'docs', 'notes', 'projects'] as const
+/** Fixture directory name under the scaffold temp workspace. */
+const PICKER_FIXTURE_DIR = 'picker-fixture'
 
 /**
  * Wait for the painted surface to settle before capturing: fonts loaded plus
@@ -146,6 +157,11 @@ describe.skipIf(!RECORD)('web e2e: visual-baseline recorder', () => {
       await page.getByRole('textbox', { name: 'Choose workspace' }).click()
       const dialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
       await dialog.waitFor({ timeout: 10_000 })
+      // The dialog opens on the browse backend's default listing target — the
+      // recording host's home directory. Never capture that: the committed PNG
+      // must not carry a maintainer's real home entries or identity. Point the
+      // picker at the staged fixture and capture its listing instead.
+      await pickerFixture(dialog, scaffold)
       await settle(page)
       await capture(page, '02-workspace-picker-dialog')
     } finally {
@@ -370,6 +386,9 @@ describe.skipIf(!RECORD)('web e2e: visual-baseline recorder', () => {
       '',
       '- Seeded-session captures show the scaffold temp workspace directory basename, which varies per run;',
       '  treat that region as non-asserted (the aria lane normalizes the same value to {{workspace}}).',
+      '- The workspace-picker capture (02-workspace-picker-dialog) shows the staged picker fixture under',
+      '  the scaffold temp workspace, never the recording host\'s home directory (the dialog opens on the',
+      '  browse backend\'s home default); its basename region varies per run and is non-asserted.',
       '- Pixel rendering (fonts, antialiasing) is platform-dependent; captures are authoritative for the',
       '  recorded platform only, and the desktop implementation phase re-records on its own platform.',
       '',
@@ -400,6 +419,29 @@ describe.skipIf(!RECORD)('web e2e: visual-baseline recorder', () => {
     await writeFile(join(OUT_DIR, 'static-assets.md'), inventory)
   })
 })
+
+/**
+ * Point the picker dialog at the staged fixture and wait for its listing.
+ * The dialog opens on the browse backend's default listing target — the
+ * recording host's home directory — so a capture taken right after open
+ * would expose real home entries and the host's identity; the fixture keeps
+ * the committed baseline private and deterministic (only its basename, under
+ * the scaffold temp workspace, varies per run). The waits double as the
+ * assertion that the visible listing is the fixture's.
+ * @param dialog - the open Select Workspace Directory dialog.
+ * @param scaffold - the booted scaffold whose temp workspace stages the fixture.
+ */
+async function pickerFixture(dialog: Locator, scaffold: WebScaffold): Promise<void> {
+  const fixture = join(scaffold.workspaceCwd, PICKER_FIXTURE_DIR)
+  for (const entry of PICKER_FIXTURE_ENTRIES) await mkdir(join(fixture, entry), { recursive: true })
+  await dialog.getByRole('button', { name: 'Edit path' }).click()
+  const pathInput = dialog.getByRole('textbox', { name: 'Edit path' })
+  await pathInput.fill(fixture)
+  await pathInput.press('Enter')
+  for (const entry of PICKER_FIXTURE_ENTRIES) {
+    await dialog.getByRole('button', { name: entry, exact: true }).waitFor({ timeout: 10_000 })
+  }
+}
 
 /**
  * Drive the hero's workspace picker until the composer unlocks — the first
