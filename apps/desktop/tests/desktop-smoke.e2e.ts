@@ -222,13 +222,10 @@ describe.skipIf(!canOpenWindow())('desktop shell smoke: the window renders the o
       '',
     ].join('\n'))
     // Seed the recorded session cold through the real persistence API, using
-    // the web lane's own fixture helpers. The recording convention is
-    // POSIX-path JSON: on Windows the temp workspace uses backslashes, which
-    // JSON would reject as escapes, so the seed realizes the fixture with
-    // forward separators (Node accepts them on Windows; the sidebar renders
-    // only the basename).
-    const posixWorkspaceCwd = workspaceCwd.split('\\').join('/')
-    await seedSession({ workspaceCwd: posixWorkspaceCwd, persistenceRoot } as unknown as WebScaffold,
+    // the web lane's own fixture helpers: realizeSeedFixture splices the
+    // workspace cwd in its JSON-escaped form, so the native Windows path
+    // (backslashes included) stays valid JSON on every host.
+    await seedSession({ workspaceCwd, persistenceRoot } as unknown as WebScaffold,
       await readFile(SEED, 'utf8'), SEED_ID)
 
     const env: Record<string, string> = { ...process.env as Record<string, string> }

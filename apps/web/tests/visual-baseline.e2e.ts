@@ -98,22 +98,6 @@ async function openSeededBySearch(page: Page, term: string): Promise<void> {
 }
 
 /**
- * Read a committed seed fixture realized for THIS scaffold. On Windows the
- * shared realizeSeedFixture splices the raw cwd path into the fixture's first
- * JSON line, whose backslashes then fail JSON.parse; pre-escape the path so
- * the splice stays valid on every host (Linux paths carry no backslashes, so
- * the escape is a no-op there).
- * @param scaffold - the scaffold whose temp workspace the seed targets.
- * @param seedPath - the committed seed fixture path.
- * @returns the realized fixture text.
- */
-async function realizedSeed(scaffold: WebScaffold, seedPath: string): Promise<string> {
-  const raw = await readFile(seedPath, 'utf8')
-  const escapedCwd = JSON.stringify(scaffold.workspaceCwd).slice(1, -1)
-  return raw.split('{{cwd}}').join(escapedCwd)
-}
-
-/**
  * Wait for the Host to publish the live Agent that opening a session resumes
  * (background-job-list pattern).
  * @param scaffold - the booted web scaffold.
@@ -202,7 +186,7 @@ describe.skipIf(!RECORD)('web e2e: visual-baseline recorder', () => {
 
   it('records a seeded conversation in light and dark theme', async () => {
     const scaffold = await launchWebScaffold({})
-    await seedSession(scaffold, await realizedSeed(scaffold, SEEDED_HISTORY_SEED), SessionId('visual-baseline-seed-1'))
+    await seedSession(scaffold, await readFile(SEEDED_HISTORY_SEED, 'utf8'), SessionId('visual-baseline-seed-1'))
     const browser = await chromium.launch()
     try {
       const page = await newEnglishPage(browser)
@@ -223,7 +207,7 @@ describe.skipIf(!RECORD)('web e2e: visual-baseline recorder', () => {
 
   it('records the background-jobs list with a running job', async () => {
     const scaffold = await launchWebScaffold({})
-    await seedSession(scaffold, await realizedSeed(scaffold, FRESH_ROUND_TRIP_FIXTURE), SessionId('visual-baseline-jobs'))
+    await seedSession(scaffold, await readFile(FRESH_ROUND_TRIP_FIXTURE, 'utf8'), SessionId('visual-baseline-jobs'))
     const browser = await chromium.launch()
     try {
       const page = await newEnglishPage(browser)
@@ -259,7 +243,7 @@ describe.skipIf(!RECORD)('web e2e: visual-baseline recorder', () => {
 
   it('records a shell terminal card', async () => {
     const scaffold = await launchWebScaffold({})
-    await seedSession(scaffold, await realizedSeed(scaffold, SHELL_SEED), SessionId('visual-baseline-shell'))
+    await seedSession(scaffold, await readFile(SHELL_SEED, 'utf8'), SessionId('visual-baseline-shell'))
     const browser = await chromium.launch()
     try {
       const page = await newEnglishPage(browser)
@@ -281,7 +265,7 @@ describe.skipIf(!RECORD)('web e2e: visual-baseline recorder', () => {
 
   it('records the trajectory tab', async () => {
     const scaffold = await launchWebScaffold({})
-    await seedSession(scaffold, await realizedSeed(scaffold, NAVIGATION_PANES_SEED), SessionId('visual-baseline-nav'))
+    await seedSession(scaffold, await readFile(NAVIGATION_PANES_SEED, 'utf8'), SessionId('visual-baseline-nav'))
     const browser = await chromium.launch()
     try {
       const page = await newEnglishPage(browser)
