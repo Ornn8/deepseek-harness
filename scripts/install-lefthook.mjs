@@ -384,21 +384,30 @@ async function acquireInstallLock(commonDirectory) {
   const ownedRecord = `${String(process.pid)} ${randomUUID()}\n`
   let initializingLock
   let createAttempts = 0
+  const simulatingCreateEperm = () => (
+    process.env.DSH_TEST_LEFTHOOK_EPERM_ONCE === '1' && createAttempts === 1
+  )
+  const simulatingStatEperm = () => (
+    process.env.DSH_TEST_LEFTHOOK_EPERM_STAT_ONCE === '1' && createAttempts === 1
+  )
+  function transientEpermError() {
+    const transientError = new Error(`EPERM: operation not permitted, open ${JSON.stringify(lockPath)}`)
+    transientError.code = 'EPERM'
+    return transientError
+  }
+  async function retryAfterTransientEperm() {
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out waiting for Lefthook installer lock ${lockPath}`)
+    }
+    await new Promise(resolveWait => setTimeout(resolveWait, INSTALL_LOCK_POLL_MS))
+  }
   while (true) {
     createAttempts += 1
     try {
-      // Test hook: make the first exclusive create report the transient EPERM
-      // a Windows release can leave behind, proving it is retried as contention.
-      // The lock must be visible, as it is in the delete-pending race.
-      if (
-        process.env.DSH_TEST_LEFTHOOK_EPERM_ONCE === '1'
-        && createAttempts === 1
-        && installLockStat(lockPath) !== undefined
-      ) {
-        const transientError = new Error(`EPERM: operation not permitted, open ${JSON.stringify(lockPath)}`)
-        transientError.code = 'EPERM'
-        throw transientError
-      }
+      // Test hooks: on the first create attempt, simulate the transient
+      // EPERM a Windows release leaves behind — on the create itself and
+      // on the contention classification — proving each is retried.
+      if (simulatingCreateEperm()) throw transientEpermError()
       const lockHandle = openSync(lockPath, 'wx', 0o600)
       let ownedStat
       try {
@@ -425,53 +434,71 @@ async function acquireInstallLock(commonDirectory) {
     } catch (error) {
       const code = errorCode(error)
       // A Windows exclusive create that races a concurrent release reports
-      // EPERM (the released name is briefly delete-pending) instead of
-      // EEXIST; when the lock file is still visible, treat it as contention.
-      const contention = code === 'EEXIST'
-        || (process.platform === 'win32' && code === 'EPERM' && installLockStat(lockPath) !== undefined)
-      if (!contention) throw error
-      const existingStat = installLockStat(lockPath)
-      if (existingStat === undefined) continue
-      if (!existingStat.isFile() || existingStat.isSymbolicLink()) {
-        throw manualLockRecoveryError(lockPath, 'invalid')
-      }
-      const existingRecord = readInstallLock(lockPath)
-      if (existingRecord === undefined) continue
-      const verifiedStat = installLockStat(lockPath)
-      if (verifiedStat === undefined) continue
-      if (!verifiedStat.isFile() || verifiedStat.isSymbolicLink()) {
-        throw manualLockRecoveryError(lockPath, 'invalid')
-      }
-      if (verifiedStat.dev !== existingStat.dev || verifiedStat.ino !== existingStat.ino) continue
-      const owner = parseInstallLock(existingRecord)
-      if (owner === undefined) {
-        if (!installLockRecordMayBeIncomplete(existingRecord)) {
-          throw manualLockRecoveryError(lockPath, 'invalid')
-        }
-        const now = Date.now()
-        if (
-          initializingLock === undefined
-          || initializingLock.dev !== existingStat.dev
-          || initializingLock.ino !== existingStat.ino
-        ) {
-          initializingLock = {
-            deadline: now + INSTALL_LOCK_INITIALIZATION_TIMEOUT_MS,
-            dev: existingStat.dev,
-            ino: existingStat.ino,
-          }
-        }
-        if (now >= initializingLock.deadline) {
-          throw manualLockRecoveryError(lockPath, 'invalid')
-        }
-        await new Promise(resolveWait => setTimeout(resolveWait, INSTALL_LOCK_POLL_MS))
+      // EPERM (the released lock name is briefly delete-pending) instead of
+      // EEXIST. While the name is delete-pending, lstat and readFile on it
+      // can also report EPERM, and once the release completes the name is
+      // simply gone; any win32 EPERM from lock-path operations is therefore
+      // transient contention: poll and retry the create within the deadline.
+      if (process.platform === 'win32' && code === 'EPERM') {
+        await retryAfterTransientEperm()
         continue
       }
-      initializingLock = undefined
-      if (!lockOwnerIsAlive(owner)) throw manualLockRecoveryError(lockPath, 'stale')
-      if (Date.now() >= deadline) {
-        throw new Error(`timed out waiting for Lefthook installer lock ${lockPath}`)
+      if (code !== 'EEXIST') throw error
+      try {
+        // Test hook: make the first contention classification report the
+        // transient EPERM, as a delete-pending name still does.
+        if (simulatingStatEperm()) throw transientEpermError()
+        const existingStat = installLockStat(lockPath)
+        if (existingStat === undefined) continue
+        if (!existingStat.isFile() || existingStat.isSymbolicLink()) {
+          throw manualLockRecoveryError(lockPath, 'invalid')
+        }
+        const existingRecord = readInstallLock(lockPath)
+        if (existingRecord === undefined) continue
+        const verifiedStat = installLockStat(lockPath)
+        if (verifiedStat === undefined) continue
+        if (!verifiedStat.isFile() || verifiedStat.isSymbolicLink()) {
+          throw manualLockRecoveryError(lockPath, 'invalid')
+        }
+        if (verifiedStat.dev !== existingStat.dev || verifiedStat.ino !== existingStat.ino) continue
+        const owner = parseInstallLock(existingRecord)
+        if (owner === undefined) {
+          if (!installLockRecordMayBeIncomplete(existingRecord)) {
+            throw manualLockRecoveryError(lockPath, 'invalid')
+          }
+          const now = Date.now()
+          if (
+            initializingLock === undefined
+            || initializingLock.dev !== existingStat.dev
+            || initializingLock.ino !== existingStat.ino
+          ) {
+            initializingLock = {
+              deadline: now + INSTALL_LOCK_INITIALIZATION_TIMEOUT_MS,
+              dev: existingStat.dev,
+              ino: existingStat.ino,
+            }
+          }
+          if (now >= initializingLock.deadline) {
+            throw manualLockRecoveryError(lockPath, 'invalid')
+          }
+          await new Promise(resolveWait => setTimeout(resolveWait, INSTALL_LOCK_POLL_MS))
+          continue
+        }
+        initializingLock = undefined
+        if (!lockOwnerIsAlive(owner)) throw manualLockRecoveryError(lockPath, 'stale')
+        if (Date.now() >= deadline) {
+          throw new Error(`timed out waiting for Lefthook installer lock ${lockPath}`)
+        }
+        await new Promise(resolveWait => setTimeout(resolveWait, INSTALL_LOCK_POLL_MS))
+      } catch (contentionError) {
+        // The classification stat and lock read can hit the same
+        // delete-pending EPERM; treat it as transient contention.
+        if (process.platform === 'win32' && errorCode(contentionError) === 'EPERM') {
+          await retryAfterTransientEperm()
+          continue
+        }
+        throw contentionError
       }
-      await new Promise(resolveWait => setTimeout(resolveWait, INSTALL_LOCK_POLL_MS))
     }
   }
 }
