@@ -395,7 +395,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = '1ba2cf1d0b4d63c72c302276223909ba83063d79'
+  const controllerSha = 'df37d424d82d33f4f4b02b2153a508f8c09fd7e8'
   const paths = [
     '.github/workflows/agent-health.yml',
     '.github/workflows/agent-issues.yml',
@@ -448,10 +448,13 @@ describe('Agent automation workflows', () => {
     expect(workflow.on).not.toHaveProperty('issues')
     expect(workflow.on).not.toHaveProperty('pull_request')
     expect(workflow.on).not.toHaveProperty('repository_dispatch')
+    // contents: write is the dispatch ceiling: assigning agent/dsh emits a
+    // dsh-issue repository_dispatch, which requires contents: write, and the
+    // called reusable workflow can only downgrade this caller's permissions.
     expect(workflow.permissions).toEqual({
       actions: 'read',
       checks: 'read',
-      contents: 'read',
+      contents: 'write',
       issues: 'write',
       'pull-requests': 'write',
     })

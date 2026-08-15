@@ -14,6 +14,6 @@ permissions:
 
 jobs:
   reconcile:
-    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-landing.yml@1ba2cf1d0b4d63c72c302276223909ba83063d79
+    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-landing.yml@df37d424d82d33f4f4b02b2153a508f8c09fd7e8
     with:
       required_checks_json: ${{ vars.DSH_AUTOMATION_REQUIRED_CHECKS }}
