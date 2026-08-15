@@ -23,6 +23,7 @@ import {
   translationPairPaths,
 } from './translation-pairing-record.ts'
 import { removeFixtureSafely } from './test-fixture-cleanup.ts'
+import { GIT_FIXTURE_TEST_TIMEOUT_MS } from './test-timeouts.ts'
 
 const driver = fileURLToPath(new URL('./merge-translation-pairing.ts', import.meta.url))
 const driverLauncher = fileURLToPath(new URL('./merge-translation-pairing-driver.sh', import.meta.url))
@@ -239,7 +240,7 @@ function expectMergedPair(fixture: Fixture): void {
   )
 }
 
-describe('translation pairing merge composition', { timeout: 15_000 }, () => {
+describe('translation pairing merge composition', { timeout: GIT_FIXTURE_TEST_TIMEOUT_MS }, () => {
   it('rejects a pairing-record path outside the repository', () => {
     const fixture = createFixture(false)
 
