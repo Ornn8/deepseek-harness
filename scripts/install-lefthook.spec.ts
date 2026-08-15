@@ -420,6 +420,19 @@ describe('worktree-local Lefthook installer', { timeout: GIT_FIXTURE_TEST_TIMEOU
     expect(result.status, result.stderr).toBe(0)
   })
 
+  it('fails loud when lock publication hits EPERM instead of retrying into its own record', async () => {
+    // A transient EPERM after the exclusive create has succeeded acts on the
+    // owned lock; retrying would find EEXIST on this process's own live
+    // record and strand the lock until the deadline. The publication EPERM
+    // must fail the install immediately, on every platform.
+    const fixture = createFixture()
+
+    const result = await runInstaller(fixture, fixture.main, { DSH_TEST_LEFTHOOK_EPERM_PUBLISH_ONCE: '1' })
+
+    expect(result.status, result.stderr).not.toBe(0)
+    expect(result.stderr).toContain('EPERM')
+  })
+
   it('repairs its owned absolute hook path after the checkout moves', async () => {
     const fixture = createFixture()
     const oldRoot = fixture.main

@@ -390,6 +390,9 @@ async function acquireInstallLock(commonDirectory) {
   const simulatingStatEperm = () => (
     process.env.DSH_TEST_LEFTHOOK_EPERM_STAT_ONCE === '1' && createAttempts === 1
   )
+  const simulatingPublishEperm = () => (
+    process.env.DSH_TEST_LEFTHOOK_EPERM_PUBLISH_ONCE === '1' && createAttempts === 1
+  )
   function transientEpermError() {
     const transientError = new Error(`EPERM: operation not permitted, open ${JSON.stringify(lockPath)}`)
     transientError.code = 'EPERM'
@@ -403,47 +406,28 @@ async function acquireInstallLock(commonDirectory) {
   }
   while (true) {
     createAttempts += 1
+    let lockHandle
     try {
-      // Test hooks: on the first create attempt, simulate the transient
-      // EPERM a Windows release leaves behind — on the create itself and
-      // on the contention classification — proving each is retried.
+      // Test hook: on the first create attempt, simulate the transient
+      // EPERM a Windows release leaves behind on the create itself,
+      // proving the create is retried.
       if (simulatingCreateEperm()) throw transientEpermError()
-      const lockHandle = openSync(lockPath, 'wx', 0o600)
-      let ownedStat
-      try {
-        ownedStat = fstatSync(lockHandle)
-        const writeDelay = Number(process.env.DSH_TEST_LEFTHOOK_LOCK_WRITE_DELAY_MS ?? 0)
-        if (writeDelay > 0) {
-          await new Promise(resolveWait => setTimeout(resolveWait, writeDelay))
-        }
-        writeFileSync(lockHandle, ownedRecord)
-      } finally {
-        closeSync(lockHandle)
-      }
-      const publishedStat = installLockStat(lockPath)
-      if (
-        publishedStat === undefined
-        || !publishedStat.isFile()
-        || publishedStat.isSymbolicLink()
-        || publishedStat.dev !== ownedStat.dev
-        || publishedStat.ino !== ownedStat.ino
-      ) {
-        throw lockOwnershipChangedError(lockPath)
-      }
-      return () => releaseInstallLock(lockPath, ownedRecord, ownedStat)
-    } catch (error) {
-      const code = errorCode(error)
+      lockHandle = openSync(lockPath, 'wx', 0o600)
+    } catch (createError) {
       // A Windows exclusive create that races a concurrent release reports
       // EPERM (the released lock name is briefly delete-pending) instead of
-      // EEXIST. While the name is delete-pending, lstat and readFile on it
-      // can also report EPERM, and once the release completes the name is
-      // simply gone; any win32 EPERM from lock-path operations is therefore
-      // transient contention: poll and retry the create within the deadline.
-      if (process.platform === 'win32' && code === 'EPERM') {
+      // EEXIST. The create did not happen, so nothing is owned and polling
+      // then retrying the create within the deadline is safe. EPERM from
+      // any later operation acts on an owned lock and is a genuine failure
+      // that propagates from the publication section below.
+      if (process.platform === 'win32' && errorCode(createError) === 'EPERM') {
         await retryAfterTransientEperm()
         continue
       }
-      if (code !== 'EEXIST') throw error
+      if (errorCode(createError) !== 'EEXIST') throw createError
+    }
+    if (lockHandle === undefined) {
+      // EEXIST: the lock belongs to a contender; classify it and wait.
       try {
         // Test hook: make the first contention classification report the
         // transient EPERM, as a delete-pending name still does.
@@ -499,7 +483,42 @@ async function acquireInstallLock(commonDirectory) {
         }
         throw contentionError
       }
+      // Every classification verdict either continues or throws; the final
+      // poll falls through here and must re-attempt the create rather than
+      // reach the publication section with no owned lock.
+      continue
     }
+    // The lock is created and owned by this process: publish the record and
+    // return the release callback. A failure here is genuine — retrying
+    // would find EEXIST on this process's own live record and strand the
+    // owned lock until the deadline — so it propagates without the
+    // win32-EPERM retry. The test hook proves a publication EPERM fails the
+    // install instead of being mistaken for contention.
+    let ownedStat
+    try {
+      // Test hook: on the first create attempt, simulate a transient EPERM
+      // from the publication itself, proving it is not retried.
+      if (simulatingPublishEperm()) throw transientEpermError()
+      ownedStat = fstatSync(lockHandle)
+      const writeDelay = Number(process.env.DSH_TEST_LEFTHOOK_LOCK_WRITE_DELAY_MS ?? 0)
+      if (writeDelay > 0) {
+        await new Promise(resolveWait => setTimeout(resolveWait, writeDelay))
+      }
+      writeFileSync(lockHandle, ownedRecord)
+    } finally {
+      closeSync(lockHandle)
+    }
+    const publishedStat = installLockStat(lockPath)
+    if (
+      publishedStat === undefined
+      || !publishedStat.isFile()
+      || publishedStat.isSymbolicLink()
+      || publishedStat.dev !== ownedStat.dev
+      || publishedStat.ino !== ownedStat.ino
+    ) {
+      throw lockOwnershipChangedError(lockPath)
+    }
+    return () => releaseInstallLock(lockPath, ownedRecord, ownedStat)
   }
 }
 
