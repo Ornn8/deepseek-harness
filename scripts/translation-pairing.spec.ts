@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { GIT_FIXTURE_TEST_TIMEOUT_MS } from './test-timeouts.ts'
 import { gitBlobHash, readGitIndexBlob, storeGitBlob } from './translation-pairing-git.ts'
 import {
   parseTranslationPairingRecord,
@@ -43,7 +44,7 @@ function gitSupportsObjectFormat(format: 'sha256'): boolean {
 
 const supportsSha256ObjectFormat = gitSupportsObjectFormat('sha256')
 
-describe('translation pairing snapshots', () => {
+describe('translation pairing snapshots', { timeout: GIT_FIXTURE_TEST_TIMEOUT_MS }, () => {
   it('stores exact uncommitted bytes for later recovery by object ID', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-translation-pairing-'))
     try {
