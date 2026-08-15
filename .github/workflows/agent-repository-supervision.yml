@@ -1,8 +1,4 @@
-name: Repository Supervision
-
-# Thin caller of the pinned repository supervisor. A scheduled run applies
-# guarded mutations; a manual dispatch defaults to a dry run unless
-# `apply_changes: true` is passed explicitly.
+name: Agent Repository Supervision
 
 on:
   schedule:
@@ -10,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       apply_changes:
-        description: Apply validated GitHub mutations instead of producing a dry run.
+        description: Apply validated repository-management changes.
         required: false
         default: false
         type: boolean
@@ -24,8 +20,7 @@ permissions:
 
 jobs:
   supervise:
-    name: repository supervision
-    uses: Ornn8/dsh-agent-automation/.github/workflows/repository-supervisor.yml@6d777eabfc9a6ee6320ba289ff276ebdfb74cb3a
+    uses: Ornn8/dsh-agent-automation/.github/workflows/repository-supervisor.yml@1ba2cf1d0b4d63c72c302276223909ba83063d79
     with:
       upstream_repository: deepseek-ai/deepseek-harness
       apply_changes: ${{ github.event_name == 'schedule' || inputs.apply_changes }}

@@ -1,0 +1,19 @@
+name: Agent Landing Reconcile
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '8-59/15 * * * *'
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  issues: read
+  pull-requests: write
+
+jobs:
+  reconcile:
+    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-landing.yml@1ba2cf1d0b4d63c72c302276223909ba83063d79
+    with:
+      required_checks_json: ${{ vars.DSH_AUTOMATION_REQUIRED_CHECKS }}

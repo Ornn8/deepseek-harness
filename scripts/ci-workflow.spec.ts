@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
@@ -395,20 +395,20 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = '6d777eabfc9a6ee6320ba289ff276ebdfb74cb3a'
+  const controllerSha = '1ba2cf1d0b4d63c72c302276223909ba83063d79'
+  const paths = [
+    '.github/workflows/agent-health.yml',
+    '.github/workflows/agent-issues.yml',
+    '.github/workflows/agent-landing-reconcile.yml',
+    '.github/workflows/agent-pr-ci-repair.yml',
+    '.github/workflows/agent-pr-land.yml',
+    '.github/workflows/agent-pr-review.yml',
+    '.github/workflows/agent-pr-rework.yml',
+    '.github/workflows/agent-recovery.yml',
+    '.github/workflows/agent-repository-supervision.yml',
+  ]
 
   it('pins every reusable controller call to one immutable revision', () => {
-    const paths = [
-      '.github/workflows/agent-health.yml',
-      '.github/workflows/agent-issues.yml',
-      '.github/workflows/agent-pr-land.yml',
-      '.github/workflows/agent-pr-ci-repair.yml',
-      '.github/workflows/agent-pr-review.yml',
-      '.github/workflows/agent-pr-rework.yml',
-      '.github/workflows/agent-recovery.yml',
-      '.github/workflows/repository-supervision.yml',
-    ]
-
     for (const path of paths) {
       const workflow = loadWorkflow(path)
       if (!isRecord(workflow.jobs)) throw new TypeError(`${path} must define jobs`)
@@ -423,8 +423,17 @@ describe('Agent automation workflows', () => {
     }
   })
 
+  it('keeps the local Agent workflow inventory equal to the bootstrap contract', () => {
+    const actual = readdirSync(resolve(root, '.github/workflows'))
+      .filter(name => name.startsWith('agent-'))
+      .map(name => `.github/workflows/${name}`)
+      .sort()
+    expect(actual).toEqual([...paths].sort())
+    expect(readdirSync(resolve(root, '.github/workflows'))).not.toContain('repository-supervision.yml')
+  })
+
   it('runs scheduled repository supervision in apply mode and manual dispatch in dry-run by default', () => {
-    const workflow = loadWorkflow('.github/workflows/repository-supervision.yml')
+    const workflow = loadWorkflow('.github/workflows/agent-repository-supervision.yml')
     const dispatch = workflowEvent(workflow, 'workflow_dispatch')
     const supervise = workflowJob(workflow, 'supervise')
     if (!isRecord(workflow.on)) throw new TypeError('Repository supervision must define events')
@@ -464,6 +473,7 @@ describe('Agent automation workflows', () => {
     const recovery = loadWorkflow('.github/workflows/agent-recovery.yml')
     const health = loadWorkflow('.github/workflows/agent-health.yml')
     const issues = loadWorkflow('.github/workflows/agent-issues.yml')
+    const landingReconcile = loadWorkflow('.github/workflows/agent-landing-reconcile.yml')
 
     expect(review.permissions).toEqual({
       checks: 'write',
@@ -505,13 +515,13 @@ describe('Agent automation workflows', () => {
       workflows: ['CI'],
       types: ['completed'],
     })
-    expect(workflowJob(ciRepair, 'dsh-ci-repair').if).toContain('vars.DSH_AUTOMATION_CI_WORKFLOW')
+    expect(workflowJob(ciRepair, 'dsh-ci-repair').if).toContain('vars.DSH_AUTOMATION_CI_WORKFLOWS')
     expect(workflowJob(ciRepair, 'dsh-ci-repair').if).toContain("github.event.workflow_run.conclusion == 'failure'")
     expect(workflowJob(ciRepair, 'dsh-ci-repair').with).toHaveProperty(
-      'ci_workflow_name', '${{ vars.DSH_AUTOMATION_CI_WORKFLOW }}',
+      'ci_workflow_name', '${{ github.event.workflow_run.name }}',
     )
     expect(repair.with).toHaveProperty(
-      'ci_workflow_name', '${{ vars.DSH_AUTOMATION_CI_WORKFLOW }}',
+      'ci_workflow_name', "${{ github.event.client_payload.ci_workflow_name || '' }}",
     )
     expect(workflowEvent(landing, 'repository_dispatch')).toEqual({ types: ['dsh-land'] })
     expect(workflowEvent(landing, 'workflow_run')).toEqual({
@@ -522,13 +532,27 @@ describe('Agent automation workflows', () => {
       workflows: ['Agent Issues', 'Agent PR Rework', 'Agent PR CI Repair', 'Agent PR Review'],
       types: ['completed'],
     })
-    expect(workflowJob(recovery, 'recover').if).toContain('["failure", "cancelled"]')
+    expect(workflowJob(recovery, 'recover').if).toContain('["failure", "cancelled", "timed_out", "startup_failure", "stale"]')
     expect(workflowJob(recovery, 'recover').if).toContain('github.event.workflow_run.conclusion')
-    expect(workflowJob(landing, 'land-reviewed-pr').if).toContain('vars.DSH_AUTOMATION_CI_WORKFLOW')
-    expect(health.on).toEqual({ workflow_dispatch: null })
-    expect(health.permissions).toEqual({ contents: 'read' })
-    expect(workflowJob(health, 'review-worker').with).toEqual({ role: 'review' })
-    expect(workflowJob(health, 'change-worker').with).toEqual({ role: 'change' })
+    expect(workflowJob(landing, 'land-reviewed-pr').if).toContain('vars.DSH_AUTOMATION_CI_WORKFLOWS')
+    expect(workflowJob(landing, 'land-reviewed-pr').with).toHaveProperty(
+      'required_checks_json', '${{ vars.DSH_AUTOMATION_REQUIRED_CHECKS }}',
+    )
+    if (!isRecord(health.on) || !isRecord(landingReconcile.on)) {
+      throw new TypeError('Agent health and landing reconciliation must define events')
+    }
+    expect(health.on.schedule).toEqual([
+      { cron: '11 * * * *' },
+      { cron: '29 3 * * *' },
+    ])
+    expect(health.permissions).toEqual({ actions: 'read', contents: 'read' })
+    expect(workflowJob(health, 'review-worker').with).toMatchObject({ role: 'review' })
+    expect(workflowJob(health, 'change-worker').with).toMatchObject({ role: 'change' })
+    expect(workflowJob(health, 'hosted-watchdog').uses).toContain('/runner-watchdog.yml@')
+    expect(landingReconcile.on.schedule).toEqual([{ cron: '8-59/15 * * * *' }])
+    expect(workflowJob(landingReconcile, 'reconcile').with).toEqual({
+      required_checks_json: '${{ vars.DSH_AUTOMATION_REQUIRED_CHECKS }}',
+    })
     expect(issues.on).toHaveProperty('push', null)
     expect(workflowJob(issues, 'dsh-backlog').if).toContain('github.event.repository.default_branch')
     expect(workflowJob(issues, 'reconcile-reviews').if).toContain('github.event.repository.default_branch')
