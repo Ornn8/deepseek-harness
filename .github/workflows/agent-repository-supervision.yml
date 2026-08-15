@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   supervise:
-    uses: Ornn8/dsh-agent-automation/.github/workflows/repository-supervisor.yml@9f984bb552f16972a8d81d6775ae54280441bab1
+    uses: Ornn8/dsh-agent-automation/.github/workflows/repository-supervisor.yml@b2af642081fa71adb6a57a37dbe3bf3f58a34c15
     with:
       upstream_repository: deepseek-ai/deepseek-harness
       apply_changes: ${{ github.event_name == 'schedule' || inputs.apply_changes }}
