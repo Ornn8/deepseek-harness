@@ -10,7 +10,7 @@ The `node 24 / coverage` CI job intermittently fails in `packages/subprocess/sub
 
 ## Decision
 
-`process-exit.spec.ts` derives its readiness budget from machine parallelism instead of a fixed deadline: `Math.max(30_000, availableParallelism() * 4_000)` milliseconds, with a 30s floor that leaves small and local machines unchanged. The budget applies to the host-readiness waits (`tree.json`, `ready`), the observability wait, and the execa child timeout. The per-test deadline keeps the same 15s margin the fixed 30s budget had, and the cleanup-assertion wait (`waitForGone`) keeps its own fixed 10s budget so boot headroom never dilutes the cleanup assertions.
+`process-exit.spec.ts` derives its readiness budget from machine parallelism instead of a fixed deadline: `Math.max(60_000, availableParallelism() * 4_000)` milliseconds. The floor is 60s, not the original 30s: the hosted 4-vCPU coverage runner tripped the 30s floor under gate load in two of five consecutive runs (runs 31857598811, 31867328646 — the combined CI baseline integration head — both failed the `direct` scenario at ~30s with a partial `tree.json` read), so small machines keep real headroom while larger lanes still scale with parallelism (4s per CPU). The budget applies to the host-readiness waits (`tree.json`, `ready`), the observability wait, and the execa child timeout. The per-test deadline keeps the same 15s margin the fixed 30s budget had, and the cleanup-assertion wait (`waitForGone`) keeps its own fixed 10s budget so boot headroom never dilutes the cleanup assertions.
 
 ## Verification
 
@@ -26,4 +26,4 @@ The gate's own evidence is the `node 24 / coverage` job on the fixing PR's run: 
 
 ## Consequences
 
-The scenario absorbs multi-minute starved boots on contended shared runners at the cost of a longer worst-case stall when the host is genuinely broken — the budget is a backstop, and healthy boots still complete in seconds. Small machines keep the previous 30s deadline.
+The scenario absorbs multi-minute starved boots on contended shared runners at the cost of a longer worst-case stall when the host is genuinely broken — the budget is a backstop, and healthy boots still complete in seconds. Small machines keep a 60s floor, double the original fixed deadline, so a loaded small runner no longer trades the flake for a coin flip.

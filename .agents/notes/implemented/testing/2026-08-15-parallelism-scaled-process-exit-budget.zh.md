@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`process-exit.spec.ts` 改为从机器并行度推导就绪预算，而不是固定期限：`Math.max(30_000, availableParallelism() * 4_000)` 毫秒，并保留 30 秒下限，使小型机器和本地机器保持不变。该预算适用于 host 就绪等待（`tree.json`、`ready`）、可观察性等待以及 execa child 超时。测试级期限保持与固定 30 秒预算相同的 15 秒余量，而清理断言等待（`waitForGone`）保留自己固定的 10 秒预算，因此启动余量永远不会稀释清理断言。
+`process-exit.spec.ts` 改为从机器并行度推导就绪预算，而不是固定期限：`Math.max(60_000, availableParallelism() * 4_000)` 毫秒。下限为 60 秒而非最初的 30 秒：托管 4-vCPU coverage runner 在最近五次运行中有两次在门禁负载下触发 30 秒下限（run 31857598811 与 31867328646——CI 基线集成分支 head——均在约 30 秒时因读到不完整的 `tree.json` 而在 `direct` 场景失败），因此小型机器保留真实余量，而更大 lane 仍随并行度缩放（每 CPU 4 秒）。该预算适用于 host 就绪等待（`tree.json`、`ready`）、可观察性等待以及 execa child 超时。测试级期限保持与固定 30 秒预算相同的 15 秒余量，而清理断言等待（`waitForGone`）保留自己固定的 10 秒预算，因此启动余量永远不会稀释清理断言。
 
 ## Verification
 
@@ -26,4 +26,4 @@ Status: implemented
 
 ## Consequences
 
-场景能够吸收竞争激烈的共享 runner 上长达数分钟的饥饿启动，代价是 host 真正损坏时最坏情况的停顿更长——预算只是兜底，健康的启动仍然在数秒内完成。小型机器保留之前的 30 秒期限。
+场景能够吸收竞争激烈的共享 runner 上长达数分钟的饥饿启动，代价是 host 真正损坏时最坏情况的停顿更长——预算只是兜底，健康的启动仍然在数秒内完成。小型机器保留 60 秒下限，是最初固定期限的两倍，负载下的小型 runner 不再把 flake 变成掷硬币。

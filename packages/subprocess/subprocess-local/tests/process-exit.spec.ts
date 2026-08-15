@@ -18,9 +18,13 @@ const hostScript = fileURLToPath(new URL('./fixtures/process-exit-host.ts', impo
 
 // The source-launched host boots the whole local plugin graph under tsx, so
 // coverage workers sharing a CI runner can starve its readiness past a fixed
-// deadline. Scale the readiness budget with machine parallelism (30s floor);
-// the cleanup assertions keep a fixed budget so they never inherit boot headroom.
-const readinessTimeoutMs = Math.max(30_000, availableParallelism() * 4_000)
+// deadline. Scale the readiness budget with machine parallelism, with a 60s
+// floor: the hosted 4-vCPU coverage runner kept tripping the 30s floor under
+// gate load (two of five consecutive runs failed the 'direct' scenario at
+// ~30s with a partial tree.json read), so the floor needs real headroom on
+// small machines too. The cleanup assertions keep a fixed budget so they
+// never inherit boot headroom.
+const readinessTimeoutMs = Math.max(60_000, availableParallelism() * 4_000)
 const cleanupTimeoutMs = 10_000
 // The readiness waits can each approach the full budget in the worst case, so
 // the per-test deadline keeps the same 15s margin the fixed 30s budget had.
