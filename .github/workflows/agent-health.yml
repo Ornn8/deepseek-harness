@@ -14,7 +14,7 @@ jobs:
   review-worker:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '29 3 * * *'
     name: review worker
-    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@1921be278e3b48650d4cb717e857ef71f5fc6a96
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@9f984bb552f16972a8d81d6775ae54280441bab1
     with:
       role: review
       readiness_canary: ${{ github.event.schedule == '29 3 * * *' }}
@@ -22,7 +22,7 @@ jobs:
   change-worker:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '29 3 * * *'
     name: change worker
-    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@1921be278e3b48650d4cb717e857ef71f5fc6a96
+    uses: Ornn8/dsh-agent-automation/.github/workflows/pipeline-health.yml@9f984bb552f16972a8d81d6775ae54280441bab1
     with:
       role: change
       readiness_canary: ${{ github.event.schedule == '29 3 * * *' }}
@@ -30,4 +30,4 @@ jobs:
   hosted-watchdog:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     name: hosted queue watchdog
-    uses: Ornn8/dsh-agent-automation/.github/workflows/runner-watchdog.yml@1921be278e3b48650d4cb717e857ef71f5fc6a96
+    uses: Ornn8/dsh-agent-automation/.github/workflows/runner-watchdog.yml@9f984bb552f16972a8d81d6775ae54280441bab1
