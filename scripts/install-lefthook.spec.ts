@@ -17,15 +17,13 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { removeFixtureSafely, unlinkFixtureLinks } from './test-fixture-cleanup.ts'
+import { GIT_FIXTURE_TEST_TIMEOUT_MS } from './test-timeouts.ts'
 
 const installer = fileURLToPath(new URL('./install-lefthook.mjs', import.meta.url))
 const pairingMergeDriver = 'scripts/merge-translation-pairing-driver.sh %O %A %B %P'
 const scriptsDirectory = fileURLToPath(new URL('.', import.meta.url))
 const tsxPackageDirectory = dirname(fileURLToPath(import.meta.resolve('tsx/package.json')))
 const fixtures: string[] = []
-// Multi-worktree cases spawn several Git and Node subprocesses; coverage concurrency can
-// legitimately exceed Vitest's default deadline without changing the installer behavior.
-const MULTI_PROCESS_TEST_TIMEOUT_MS = 20_000
 
 interface Fixture {
   container: string
@@ -211,7 +209,7 @@ function runInstaller(
   })
 }
 
-describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
+describe('worktree-local Lefthook installer', { timeout: GIT_FIXTURE_TEST_TIMEOUT_MS }, () => {
   for (const [label, extraEnv] of [
     ['CI', { CI: 'true' }],
     ['GitHub Actions', { GITHUB_ACTIONS: 'true' }],
@@ -290,7 +288,7 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
     git(fixture, fixture.main, ['worktree', 'remove', '--force', fixture.linked])
     expect(readFileSync(join(mainHooks, 'pre-commit'), 'utf8')).toBe(mainHookBeforeRemoval)
     expect(readFileSync(legacyHook, 'utf8')).toBe('#!/bin/sh\n# legacy hook\n')
-  }, MULTI_PROCESS_TEST_TIMEOUT_MS)
+  }, GIT_FIXTURE_TEST_TIMEOUT_MS)
 
   it('replaces the owned hook path Git copies into a newly added worktree', async () => {
     const fixture = createFixture()
@@ -315,7 +313,7 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
       '# config=late-linked-worktree-config',
     )
     expect(readFileSync(join(mainHooks, 'pre-commit'), 'utf8')).toBe(mainHookBefore)
-  }, MULTI_PROCESS_TEST_TIMEOUT_MS)
+  }, GIT_FIXTURE_TEST_TIMEOUT_MS)
 
   it('serializes concurrent installs and keeps repeated output stable', async () => {
     const fixture = createFixture()
@@ -336,7 +334,7 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
     expect(readFileSync(mainHookPath, 'utf8')).toBe(initialHook)
     expect(existsSync(join(commonDirectory(fixture), 'dsh-lefthook-install.lock'))).toBe(false)
     expect(existsSync(join(hooksPath(fixture, fixture.main), '.fake-lefthook-running'))).toBe(false)
-  }, MULTI_PROCESS_TEST_TIMEOUT_MS)
+  }, GIT_FIXTURE_TEST_TIMEOUT_MS)
 
   it('waits for a concurrent installer to finish publishing its lock record', async () => {
     const fixture = createFixture()
@@ -352,6 +350,39 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
 
     for (const result of results) expect(result.status, result.stderr).toBe(0)
     expect(existsSync(lockPath)).toBe(false)
+  })
+
+  it.skipIf(process.platform !== 'win32')('retries an exclusive-create EPERM like a contended lock', async () => {
+    const fixture = createFixture()
+    const lockPath = installLockPath(fixture)
+    // A Windows exclusive create racing a concurrent release reports EPERM
+    // while the released lock name is delete-pending. Hold the lock from a
+    // short-lived child so the installer's first create hits that EPERM,
+    // then let the holder release so the retry acquires normally.
+    const holderScript = join(fixture.container, 'lock-holder.mjs')
+    write(holderScript, `import { openSync, writeFileSync, closeSync, unlinkSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+const lockPath = ${JSON.stringify(lockPath)}
+const record = \`\${process.pid} \${randomUUID()}\\n\`
+const handle = openSync(lockPath, 'wx')
+writeFileSync(handle, record)
+closeSync(handle)
+setTimeout(() => unlinkSync(lockPath), 10000)
+`)
+    const holder = spawn(process.execPath, [holderScript], { stdio: 'ignore' })
+    const holderClosed = new Promise<void>((resolveWait) => {
+      if (holder.exitCode !== null) {
+        resolveWait()
+      } else {
+        holder.once('close', () => { resolveWait() })
+      }
+    })
+    await waitForPath(lockPath)
+
+    const result = await runInstaller(fixture, fixture.main, { DSH_TEST_LEFTHOOK_EPERM_ONCE: '1' })
+
+    expect(result.status, result.stderr).toBe(0)
+    await holderClosed
   })
 
   it('repairs its owned absolute hook path after the checkout moves', async () => {
@@ -374,7 +405,7 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
     expect(readFileSync(join(movedHooks, '.dsh-lefthook-owned'), 'utf8')).toContain(
       JSON.stringify(movedHooks),
     )
-  }, MULTI_PROCESS_TEST_TIMEOUT_MS)
+  }, GIT_FIXTURE_TEST_TIMEOUT_MS)
 
   it.skipIf(process.platform === 'win32')('refuses a multiply linked ownership marker before relocation rewrites it', async () => {
     const fixture = createFixture()
@@ -415,7 +446,7 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
       expect(result.stderr).toContain('non-regular or multiply linked hook entry')
       expect(readFileSync(externalHook, 'utf8')).toBe(externalContent)
     }
-  }, MULTI_PROCESS_TEST_TIMEOUT_MS)
+  }, GIT_FIXTURE_TEST_TIMEOUT_MS)
 
   it('restores the marker-backed stale hook path when relocation reinstall fails', async () => {
     const fixture = createFixture()

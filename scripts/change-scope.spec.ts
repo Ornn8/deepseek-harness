@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { renderChangeScope } from './change-scope.ts'
+import { GIT_FIXTURE_TEST_TIMEOUT_MS } from './test-timeouts.ts'
 
 interface Report {
   formatVersion: number
@@ -96,8 +97,8 @@ function repositoryState(root: string): Record<string, string> {
   }
 }
 
-describe('change-scope', () => {
-  it('uses an explicit base on a fresh branch without a same-name remote and after its first push', { timeout: 20_000 }, () => {
+describe('change-scope', { timeout: GIT_FIXTURE_TEST_TIMEOUT_MS }, () => {
+  it('uses an explicit base on a fresh branch without a same-name remote and after its first push', { timeout: GIT_FIXTURE_TEST_TIMEOUT_MS }, () => {
     const { root } = fixture()
     git(root, ['switch', '-c', 'feature'])
     git(root, ['branch', '--set-upstream-to=origin/master'])
