@@ -209,6 +209,29 @@ function runInstaller(
   })
 }
 
+function spawnLockHolder(container: string, lockPath: string): Promise<void> {
+  // A short-lived child that publishes a valid lock record and releases it
+  // after 10 seconds, standing in for a concurrent installer's lock tenure.
+  const holderScript = join(container, 'lock-holder.mjs')
+  write(holderScript, `import { openSync, writeFileSync, closeSync, unlinkSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+const lockPath = ${JSON.stringify(lockPath)}
+const record = \`\${process.pid} \${randomUUID()}\\n\`
+const handle = openSync(lockPath, 'wx')
+writeFileSync(handle, record)
+closeSync(handle)
+setTimeout(() => unlinkSync(lockPath), 10000)
+`)
+  const holder = spawn(process.execPath, [holderScript], { stdio: 'ignore' })
+  return new Promise<void>((resolveWait) => {
+    if (holder.exitCode !== null) {
+      resolveWait()
+    } else {
+      holder.once('close', () => { resolveWait() })
+    }
+  })
+}
+
 describe('worktree-local Lefthook installer', { timeout: GIT_FIXTURE_TEST_TIMEOUT_MS }, () => {
   for (const [label, extraEnv] of [
     ['CI', { CI: 'true' }],
@@ -352,37 +375,49 @@ describe('worktree-local Lefthook installer', { timeout: GIT_FIXTURE_TEST_TIMEOU
     expect(existsSync(lockPath)).toBe(false)
   })
 
-  it.skipIf(process.platform !== 'win32')('retries an exclusive-create EPERM like a contended lock', async () => {
+  it.skipIf(process.platform !== 'win32')('retries a transient exclusive-create EPERM while the lock is held', async () => {
     const fixture = createFixture()
     const lockPath = installLockPath(fixture)
     // A Windows exclusive create racing a concurrent release reports EPERM
     // while the released lock name is delete-pending. Hold the lock from a
     // short-lived child so the installer's first create hits that EPERM,
     // then let the holder release so the retry acquires normally.
-    const holderScript = join(fixture.container, 'lock-holder.mjs')
-    write(holderScript, `import { openSync, writeFileSync, closeSync, unlinkSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
-const lockPath = ${JSON.stringify(lockPath)}
-const record = \`\${process.pid} \${randomUUID()}\\n\`
-const handle = openSync(lockPath, 'wx')
-writeFileSync(handle, record)
-closeSync(handle)
-setTimeout(() => unlinkSync(lockPath), 10000)
-`)
-    const holder = spawn(process.execPath, [holderScript], { stdio: 'ignore' })
-    const holderClosed = new Promise<void>((resolveWait) => {
-      if (holder.exitCode !== null) {
-        resolveWait()
-      } else {
-        holder.once('close', () => { resolveWait() })
-      }
-    })
+    const holderClosed = spawnLockHolder(fixture.container, lockPath)
     await waitForPath(lockPath)
 
     const result = await runInstaller(fixture, fixture.main, { DSH_TEST_LEFTHOOK_EPERM_ONCE: '1' })
 
-    expect(result.status, result.stderr).toBe(0)
     await holderClosed
+    expect(result.status, result.stderr).toBe(0)
+  })
+
+  it.skipIf(process.platform !== 'win32')('retries a transient exclusive-create EPERM after the release has completed', async () => {
+    // In a live create/unlink race the create EPERM fires while the released
+    // name is delete-pending, and the classification stat almost always finds
+    // the name already gone; the installer must retry the create instead of
+    // treating the vanished name as a fatal error.
+    const fixture = createFixture()
+
+    const result = await runInstaller(fixture, fixture.main, { DSH_TEST_LEFTHOOK_EPERM_ONCE: '1' })
+
+    expect(result.status, result.stderr).toBe(0)
+    expect(existsSync(installLockPath(fixture))).toBe(false)
+  })
+
+  it.skipIf(process.platform !== 'win32')('retries a delete-pending EPERM from the contention classification', async () => {
+    const fixture = createFixture()
+    const lockPath = installLockPath(fixture)
+    // While the released name is delete-pending, the classification stat and
+    // lock read after an EEXIST can themselves report EPERM; the installer
+    // must retry rather than abort. The first classification reports the
+    // transient EPERM while the held lock keeps the retries contended.
+    const holderClosed = spawnLockHolder(fixture.container, lockPath)
+    await waitForPath(lockPath)
+
+    const result = await runInstaller(fixture, fixture.main, { DSH_TEST_LEFTHOOK_EPERM_STAT_ONCE: '1' })
+
+    await holderClosed
+    expect(result.status, result.stderr).toBe(0)
   })
 
   it('repairs its owned absolute hook path after the checkout moves', async () => {
