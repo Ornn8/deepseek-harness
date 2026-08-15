@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-15-parallelism-scaled-process-exit-budget.md
+2026-08-15-parallelism-scaled-process-exit-budget.md: 9e27b712d4c125cd598d8ad7a746f088dc3d5caf
+2026-08-15-parallelism-scaled-process-exit-budget.zh.md: bbeeae0642c6556fb7b23a7fe771dd020e6a9cc2

@@ -1,5 +1,5 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { availableParallelism, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execa } from 'execa'
@@ -15,7 +15,16 @@ interface TreeState { root: number; descendant: number }
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const hostScript = fileURLToPath(new URL('./fixtures/process-exit-host.ts', import.meta.url))
-const scenarioTimeoutMs = 30_000
+
+// The source-launched host boots the whole local plugin graph under tsx, so
+// coverage workers sharing a CI runner can starve its readiness past a fixed
+// deadline. Scale the readiness budget with machine parallelism (30s floor);
+// the cleanup assertions keep a fixed budget so they never inherit boot headroom.
+const readinessTimeoutMs = Math.max(30_000, availableParallelism() * 4_000)
+const cleanupTimeoutMs = 10_000
+// The readiness waits can each approach the full budget in the worst case, so
+// the per-test deadline keeps the same 15s margin the fixed 30s budget had.
+const testTimeoutMs = readinessTimeoutMs + 15_000
 
 function processExists(pid: number): boolean {
   try {
@@ -36,7 +45,7 @@ async function readTree(path: string): Promise<TreeState> {
       throw new Error(`invalid managed-tree state: ${text}`)
     }
     return state as TreeState
-  }, { interval: 10, timeout: scenarioTimeoutMs })
+  }, { interval: 10, timeout: readinessTimeoutMs })
 }
 
 async function captureIdentities(inspector: ProcessInspector, state: TreeState): Promise<ProcessIdentity[]> {
@@ -45,13 +54,13 @@ async function captureIdentities(inspector: ProcessInspector, state: TreeState):
     const identities = inspector.processTree(state.root).filter(identity => expected.has(identity.pid))
     if (identities.length !== expected.size) throw new Error('managed tree is not fully observable yet')
     return identities
-  }, { interval: 10, timeout: scenarioTimeoutMs })
+  }, { interval: 10, timeout: readinessTimeoutMs })
 }
 
 async function waitForGone(state: TreeState): Promise<void> {
   await Promise.all([state.root, state.descendant].map(pid => vi.waitFor(() => {
     if (processExists(pid)) throw new Error(`managed pid ${pid} is still alive`)
-  }, { interval: 25, timeout: 10_000 })))
+  }, { interval: 25, timeout: cleanupTimeoutMs })))
 }
 
 function cleanupTree(state: TreeState | undefined, identities: ProcessIdentity[]): void {
@@ -99,7 +108,7 @@ async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
     env: launch.env,
     stdin: 'ignore',
     reject: false,
-    timeout: scenarioTimeoutMs,
+    timeout: readinessTimeoutMs,
   })
   let state: TreeState | undefined
   let identities: ProcessIdentity[] = []
@@ -109,7 +118,7 @@ async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
     state = await readTree(join(root, 'tree.json'))
     await vi.waitFor(() => readFile(join(root, 'ready'), 'utf8'), {
       interval: 10,
-      timeout: scenarioTimeoutMs,
+      timeout: readinessTimeoutMs,
     })
     if (process.platform !== 'win32') identities = await captureIdentities(createProcessInspector(), state)
     await writeFile(join(root, 'proceed'), 'proceed')
@@ -143,7 +152,7 @@ describe('synchronous cleanup on host exit', () => {
     { trigger: 'direct' as const, expectedCode: 23, diagnostic: undefined },
     { trigger: 'uncaught-exception' as const, expectedCode: 1, diagnostic: 'host-exit-uncaught-exception' },
     { trigger: 'unhandled-rejection' as const, expectedCode: 1, diagnostic: 'host-exit-unhandled-rejection' },
-  ])('removes an ordinary managed tree after $trigger', { timeout: 45_000 }, async ({
+  ])('removes an ordinary managed tree after $trigger', { timeout: testTimeoutMs }, async ({
     trigger,
     expectedCode,
     diagnostic,
@@ -156,7 +165,7 @@ describe('synchronous cleanup on host exit', () => {
 
   it.skipIf(process.platform === 'win32')(
     'removes a terminal root and descendant after direct exit',
-    { timeout: 45_000 },
+    { timeout: testTimeoutMs },
     async () => {
       const { outcome } = await runScenario('terminal', 'direct')
       expect(outcome.exitCode).toBe(23)
@@ -164,7 +173,7 @@ describe('synchronous cleanup on host exit', () => {
     },
   )
 
-  it('preserves normal terminate-and-join disposal and removes the exit listener', { timeout: 45_000 }, async () => {
+  it('preserves normal terminate-and-join disposal and removes the exit listener', { timeout: testTimeoutMs }, async () => {
     const { outcome, disposeCounts } = await runScenario('ordinary', 'dispose')
     expect(outcome.exitCode).toBe(0)
     expect(disposeCounts?.listenersAfterLoad).toBe((disposeCounts?.listenersBefore ?? 0) + 1)
