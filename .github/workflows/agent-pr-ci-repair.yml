@@ -1,6 +1,6 @@
 name: Agent PR CI Repair
 
-# Configure DSH_AUTOMATION_CI_WORKFLOW to "CI" before enabling this listener.
+# Configure DSH_AUTOMATION_CI_WORKFLOWS before enabling this listener.
 
 on:
   workflow_run:
@@ -13,12 +13,11 @@ permissions:
 jobs:
   dsh-ci-repair:
     if: >-
-      github.event.workflow_run.name == vars.DSH_AUTOMATION_CI_WORKFLOW
+      contains(fromJSON(vars.DSH_AUTOMATION_CI_WORKFLOWS), github.event.workflow_run.name)
       && github.event.workflow_run.conclusion == 'failure'
-      && github.event.workflow_run.pull_requests[0].number != null
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@6d777eabfc9a6ee6320ba289ff276ebdfb74cb3a
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-repair.yml@df37d424d82d33f4f4b02b2153a508f8c09fd7e8
     with:
-      pull_request_number: ${{ github.event.workflow_run.pull_requests[0].number }}
+      pull_request_number: ${{ github.event.workflow_run.pull_requests[0].number || 0 }}
       head_sha: ${{ github.event.workflow_run.head_sha }}
       request_id: ${{ format('ci-run-{0}-{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt) }}
-      ci_workflow_name: ${{ vars.DSH_AUTOMATION_CI_WORKFLOW }}
+      ci_workflow_name: ${{ github.event.workflow_run.name }}

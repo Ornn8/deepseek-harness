@@ -1,0 +1,27 @@
+name: Agent Repository Supervision
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      apply_changes:
+        description: Apply validated repository-management changes.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  supervise:
+    uses: Ornn8/dsh-agent-automation/.github/workflows/repository-supervisor.yml@df37d424d82d33f4f4b02b2153a508f8c09fd7e8
+    with:
+      upstream_repository: deepseek-ai/deepseek-harness
+      apply_changes: ${{ github.event_name == 'schedule' || inputs.apply_changes }}
+      max_mutations: 5
