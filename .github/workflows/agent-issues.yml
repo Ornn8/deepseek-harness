@@ -6,7 +6,7 @@ on:
   repository_dispatch:
     types: [dsh-issue]
   issues:
-    types: [opened, reopened, labeled]
+    types: [opened, reopened, edited, closed, labeled]
 
 permissions:
   actions: read
@@ -21,19 +21,20 @@ jobs:
       (github.event_name == 'push'
         && github.ref_name == github.event.repository.default_branch)
       || github.event_name == 'workflow_dispatch'
-      || (github.event_name == 'issues' && contains(fromJSON('["opened","reopened"]'), github.event.action))
+      || (github.event_name == 'issues' && contains(fromJSON('["opened","reopened","edited","closed"]'), github.event.action))
       || (github.event_name == 'issues'
         && github.event.action == 'labeled'
         && github.event.label.name == 'agent/dsh-failed')
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dispatch-backlog.yml@cf9e5d0948f6eb209d2bf56dfdad6ddbaf262852
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dispatch-backlog.yml@6d777eabfc9a6ee6320ba289ff276ebdfb74cb3a
 
   dsh-issue:
     if: >-
       github.event_name == 'repository_dispatch'
       || (github.event_name == 'issues'
+        && github.event.action == 'labeled'
         && github.event.label.name == 'agent/dsh'
         && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
-    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@cf9e5d0948f6eb209d2bf56dfdad6ddbaf262852
+    uses: Ornn8/dsh-agent-automation/.github/workflows/dsh-issue.yml@6d777eabfc9a6ee6320ba289ff276ebdfb74cb3a
     with:
       issue_number: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.issue_number || github.event.issue.number }}
       request_id: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.request_id || format('label-{0}-{1}', github.run_id, github.run_attempt) }}
@@ -42,4 +43,4 @@ jobs:
     if: >-
       github.event_name == 'push'
       && github.ref_name == github.event.repository.default_branch
-    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-reviews.yml@cf9e5d0948f6eb209d2bf56dfdad6ddbaf262852
+    uses: Ornn8/dsh-agent-automation/.github/workflows/reconcile-reviews.yml@6d777eabfc9a6ee6320ba289ff276ebdfb74cb3a

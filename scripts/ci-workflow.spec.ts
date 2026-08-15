@@ -395,7 +395,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = 'cf9e5d0948f6eb209d2bf56dfdad6ddbaf262852'
+  const controllerSha = '6d777eabfc9a6ee6320ba289ff276ebdfb74cb3a'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
@@ -406,6 +406,7 @@ describe('Agent automation workflows', () => {
       '.github/workflows/agent-pr-review.yml',
       '.github/workflows/agent-pr-rework.yml',
       '.github/workflows/agent-recovery.yml',
+      '.github/workflows/repository-supervision.yml',
     ]
 
     for (const path of paths) {
@@ -420,6 +421,39 @@ describe('Agent automation workflows', () => {
         expect(job.with ?? {}).not.toHaveProperty('repository')
       }
     }
+  })
+
+  it('runs scheduled repository supervision in apply mode and manual dispatch in dry-run by default', () => {
+    const workflow = loadWorkflow('.github/workflows/repository-supervision.yml')
+    const dispatch = workflowEvent(workflow, 'workflow_dispatch')
+    const supervise = workflowJob(workflow, 'supervise')
+    if (!isRecord(workflow.on)) throw new TypeError('Repository supervision must define events')
+
+    // Schedule fires at minute 17 of every six hours: 00:17, 06:17, 12:17, and
+    // 18:17 UTC (09:17, 15:17, 21:17, and 03:17 JST).
+    expect(workflow.on.schedule).toEqual([{ cron: '17 */6 * * *' }])
+    if (!isRecord(dispatch.inputs) || !isRecord(dispatch.inputs.apply_changes)) {
+      throw new TypeError('Repository supervision must define the apply_changes input')
+    }
+    expect(dispatch.inputs.apply_changes).toMatchObject({ type: 'boolean', default: false })
+    expect(workflow.on).not.toHaveProperty('issues')
+    expect(workflow.on).not.toHaveProperty('pull_request')
+    expect(workflow.on).not.toHaveProperty('repository_dispatch')
+    expect(workflow.permissions).toEqual({
+      actions: 'read',
+      checks: 'read',
+      contents: 'read',
+      issues: 'write',
+      'pull-requests': 'write',
+    })
+    expect(supervise).toMatchObject({
+      uses: `Ornn8/dsh-agent-automation/.github/workflows/repository-supervisor.yml@${controllerSha}`,
+      with: {
+        upstream_repository: 'deepseek-ai/deepseek-harness',
+        apply_changes: "${{ github.event_name == 'schedule' || inputs.apply_changes }}",
+        max_mutations: 5,
+      },
+    })
   })
 
   it('separates review publication, repair wakeups, landing, and model-free health', () => {
