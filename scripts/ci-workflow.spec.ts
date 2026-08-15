@@ -394,7 +394,7 @@ describe('Issue lifecycle workflow', () => {
 })
 
 describe('Agent automation workflows', () => {
-  const controllerSha = 'cf9e5d0948f6eb209d2bf56dfdad6ddbaf262852'
+  const controllerSha = '76f1148f4e4228099068316f369bc71475c6c968'
 
   it('pins every reusable controller call to one immutable revision', () => {
     const paths = [
@@ -455,6 +455,9 @@ describe('Agent automation workflows', () => {
     })
     expect(workflowEvent(review, 'repository_dispatch')).toEqual({ types: ['codex-review'] })
     expect(workflowJob(review, 'codex-review').if).toContain('repository_dispatch')
+    expect(workflowEvent(issues, 'issues')).toEqual({
+      types: ['opened', 'reopened', 'edited', 'closed', 'labeled'],
+    })
     expect(workflowEvent(issues, 'repository_dispatch')).toEqual({ types: ['dsh-issue'] })
     expect(workflowJob(issues, 'dsh-issue').if).toContain('repository_dispatch')
     expect(workflowEvent(rework, 'repository_dispatch')).toEqual({

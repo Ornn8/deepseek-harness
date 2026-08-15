@@ -33,7 +33,7 @@ ProjectV2 与组织级 Issue Fields 是仅限组织的 GitHub 功能：在个人
 
 PASS 结论发出 `dsh-land`，而不是启用长期 auto-merge。落地控制器只接受当前指向仓库默认分支的非草稿 PR，要求精确 base/head PASS 记录，以及由 GitHub Actions App 发布在精确 head 上且名称为 `all checks passed` 的已配置 CheckRun，在 squash merge 前立即重复这些检查，否则不改变 PR 即退出。由于工作流 token 无法读取仓库管理设置，安装和在线诊断会独立强制执行分支保护要求。成功的已配置 CI workflow run 会在待定检查完成后重试落地。
 
-每次向仓库默认分支推送后，协调器都会把同仓库 PR 记录的 base commit 与当前默认分支 commit 比较，并且无论 GitHub 的临时 mergeability 状态如何都会更新陈旧 base。这项变更在 change 角色 runner 上使用经验证的主机 GitHub 凭据，因此 GitHub 会发出普通 pull request 事件并同时重跑 CI 与审核；若使用 Actions 作业 token，这些事件会被抑制。对于不需要更新分支的当前版本，只有缺少可信精确版本对证据时才会显式分发审核。Backlog 与有界恢复也使用显式 `repository_dispatch` 事件；若一个带 `agent/dsh` 标签的 Issue 既没有关闭它的 PR，也没有终态失败，backlog 可以重新认领它，而工作流并发控制和稳定的 WorkRequest 标识会阻止第二个模型轮次。没有声明分支但 marker 验证通过的 CI baseline Issue 会在确定性的 `agent/issue-<number>` 分支上进入同一队列。受保护默认分支上的 listener 与固定的可复用控制器会在调用模型前重新核验实时 Issue 或精确 PR 版本对。手动健康工作流在各自 runner 上分别检查每个已配置 worker，并检查固定控制器与 GitHub 访问，全程不调用模型。
+每次向仓库默认分支推送后，协调器都会把同仓库 PR 记录的 base commit 与当前默认分支 commit 比较，并且无论 GitHub 的临时 mergeability 状态如何都会更新陈旧 base。这项变更在 change 角色 runner 上使用经验证的主机 GitHub 凭据，因此 GitHub 会发出普通 pull request 事件并同时重跑 CI 与审核；若使用 Actions 作业 token，这些事件会被抑制。对于不需要更新分支的当前版本，只有缺少可信精确版本对证据时才会显式分发审核。Backlog 与有界恢复也使用显式 `repository_dispatch` 事件。可信 Issue 可以包含一份严格的 `agent-work:v1` JSON 路由声明：`ready` 将其 `change` 角色排入队列，`hold` 保持惰性，仍处于 open 状态的 `dependsOn` Issue 会推迟执行，直到 Issue close 事件重新评估 backlog。声明字段的规范哈希提供稳定请求标识，worker 则会在调用模型前重新读取实时声明与依赖。对于既没有关闭它的 PR、也没有终态失败的旧式 `agent/dsh` Issue，backlog 仍可重新认领；工作流并发控制和稳定请求标识会阻止第二个模型轮次。没有声明分支但 marker 验证通过的 CI baseline Issue 会在确定性的 `agent/issue-<number>` 分支上进入同一队列。受保护默认分支上的 listener 与固定的可复用控制器会在调用模型前重新核验实时 Issue 或精确 PR 版本对。手动健康工作流在各自 runner 上分别检查每个已配置 worker，并检查固定控制器与 GitHub 访问，全程不调用模型。
 
 ## Alternatives considered
 
