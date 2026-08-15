@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import HttpServer from '../src/index.ts'
+import HttpServer, { BadRequestError } from '../src/index.ts'
 
 let root: string | undefined
 let context: Context | undefined
@@ -85,6 +85,28 @@ async function upgrade(port: number, path: string): Promise<ReturnType<typeof co
   return socket
 }
 
+/** Write one raw request line and return the first response status line. */
+async function rawRequest(port: number, requestLine: string): Promise<string> {
+  const socket = connect(port, '127.0.0.1')
+  const chunks: Buffer[] = []
+  socket.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+  const closed = once(socket, 'close')
+  await once(socket, 'connect')
+  socket.write(`${requestLine}\r\nHost: 127.0.0.1:${String(port)}\r\n\r\n`)
+  await closed
+  return String(Buffer.concat(chunks).toString('utf8').split('\r\n')[0])
+}
+
+/** Decode a raw pathname the way the shipped SPA dist server does, classifying
+ * a malformed %-escape as client error. */
+function decodePath(rawPath: string): string {
+  try {
+    return decodeURIComponent(rawPath)
+  } catch {
+    throw new BadRequestError('malformed percent-encoding in request path')
+  }
+}
+
 describe('real Loader composition', () => {
   // Real-Loader composition resolves workspace packages through tsx at test
   // time; first resolution after the host/client program split is slow enough
@@ -120,11 +142,12 @@ describe('real Loader composition', () => {
     const untap = server.tapIndex(html => html.replace('<head>', '<head><script>window.__T__=1</script>'))
     expect(server.applyIndexTaps('<head></head>')).toContain('__T__')
     const releaseFallback = server.registerFallback((req, res) => {
-      // Decode like a real static server would — a malformed %-escape throws
-      // here, probing the webserver's per-request error containment.
-      decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)
+      // Decode like the shipped SPA dist server would — a malformed %-escape
+      // rejects with BadRequestError, probing the request guard's client-error
+      // classification (400), while unclassified rejections answer 500.
+      const pathname = decodePath(new URL(req.url ?? '/', 'http://x').pathname)
       res.writeHead(200, { 'content-type': 'text/html' })
-      res.end(server.applyIndexTaps('<head></head><body>shell</body>'))
+      res.end(server.applyIndexTaps(`<head></head><body>shell ${pathname}</body>`))
     })
     expect(() => server.registerFallback(() => {})).toThrow(/fallback already registered/)
     expect((await request(port, '/no/such/route')).body).toContain('__T__')
@@ -132,9 +155,16 @@ describe('real Loader composition', () => {
     expect((await request(port, '/no/such/route')).body).not.toContain('__T__')
     expect((await request(port, '/no/such/route')).body).toContain('shell')
 
-    // Per-request error containment: a malformed %-escape answers 400 and the
-    // server keeps serving afterwards (no process-level failure path).
+    // Per-request error classification: a malformed %-escape is client error
+    // and answers 400; an unclassified internal handler failure answers 500
+    // (never 400), and the server keeps serving afterwards either way.
     expect((await request(port, '/%zz')).status).toBe(400)
+    server.register({ kind: 'exact', path: '/boom', handler: async () => { throw new Error('internal route failure') } })
+    expect((await request(port, '/boom')).status).toBe(500)
+    expect(await request(port, '/probe')).toMatchObject({ status: 200, body: 'EXACT' })
+    // A malformed request target node:http accepts but the URL parser rejects
+    // (absolute-form with an out-of-range port) is also client error.
+    expect(await rawRequest(port, 'GET http://x:99999/ HTTP/1.1')).toBe('HTTP/1.1 400 Bad Request')
     expect(await request(port, '/probe')).toMatchObject({ status: 200, body: 'EXACT' })
 
     // Duplicate (kind, path) is a misconfiguration and throws; the disposer
@@ -147,9 +177,15 @@ describe('real Loader composition', () => {
     expect((await request(port, '/once')).body).toContain('shell') // back to the fallback owner
     expect(() => server.register({ kind: 'exact', path: '/once', handler: () => {} })).not.toThrow()
 
-    // Releasing the seat restores the unclaimed 404 and registrability.
+    // Releasing the seat restores the unclaimed 404; an unclassified
+    // fallback implementation failure answers 500 and stays contained; after
+    // release the seat is registrable again.
     releaseFallback()
     expect((await request(port, '/no/such/route')).status).toBe(404)
+    const throwingFallback = server.registerFallback(async () => { throw new Error('internal fallback failure') })
+    expect((await request(port, '/no/such/route')).status).toBe(500)
+    expect(await request(port, '/probe')).toMatchObject({ status: 200, body: 'EXACT' })
+    throwingFallback()
     expect(() => server.registerFallback(() => {})).not.toThrow()
 
     // Upgrade routes match exact pathnames, reject duplicate ownership, and

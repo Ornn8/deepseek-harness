@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import { BadRequestError, type WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { ClientModuleRegistry } from '../src/index.ts'
 
 let root: string | undefined
@@ -112,6 +112,25 @@ describe('client bundle activation', () => {
     expect(String(thrown)).toContain('  other failures:')
     expect(String(thrown)).toContain('EISDIR')
     expect(String(thrown)).not.toContain('pnpm run build')
+  })
+
+  it('classifies a malformed %-escape in a bundle URL as client error', async () => {
+    const packageName = '@fixture/malformed-url'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    const { route } = constructWithRoute([packageName])
+    const response = {
+      writeHead() { return response },
+      end() { return response },
+    } as unknown as ServerResponse
+
+    // The webserver request guard answers BadRequestError with 400; the
+    // bundle route must never turn a malformed URL into a server error.
+    await expect(route.handler({
+      method: 'GET',
+      url: '/plugins/%zz/client.js',
+    } as IncomingMessage, response)).rejects.toBeInstanceOf(BadRequestError)
   })
 
   it('serves the source map beside a registered client bundle', async () => {
