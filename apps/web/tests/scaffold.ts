@@ -704,7 +704,11 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
   const realized = fixtureText
     .split('{{sessionId}}').join(id)
     .split('{{cwd}}').join(scaffold.workspaceCwd)
-  const fixtureCwd = (JSON.parse(realized.split('\n', 1)[0]!) as { cwd?: string }).cwd
+  // Read the recorded cwd without JSON.parse: on Windows a realized temp path
+  // holds backslashes that JSON would reject as escapes. The capture keeps
+  // JSON string escapes intact, so the raw text still matches `realized`.
+  const header = realized.split('\n', 1)[0] ?? ''
+  const fixtureCwd = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(header)?.[1]
   return fixtureCwd === undefined
     ? realized
     : realized.split(fixtureCwd).join(scaffold.workspaceCwd)
