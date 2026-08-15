@@ -4,10 +4,9 @@
 // must render with the same terminal card layout as bash and show the parsed exit-status
 // pill — not a generic console-fenced card. The seed is authored, not
 // recorded: its header line carries no `cwd`
-// field (seedSession writes the session cwd itself, and a Windows temp path
-// substituted into the header would not round-trip through its JSON parse),
-// and no event references the workspace, so the lane replays on any host
-// with a usable `pwsh` — the lane mounts the pwsh stack through an overlay
+// field (seedSession writes the session cwd itself), and no event references
+// the workspace, so the lane replays on any host with a usable `pwsh` — the
+// lane mounts the pwsh stack through an overlay
 // (the shipped tree keeps the bash stack).
 import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'

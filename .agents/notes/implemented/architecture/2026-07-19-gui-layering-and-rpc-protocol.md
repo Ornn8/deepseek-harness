@@ -32,8 +32,7 @@ Directories layer as follows:
 - `apps/` holds the externally exported applications, assembled from Client / Host mixtures.
     - `apps/web` (`dsh-web-frontend`) is the vite application: a thin `main.ts` over the shell API exported by `dsh-client-web`.
     - `apps/cli` (`@deepseek-ai/dsh`) dispatches commands: `dsh web` = Host + webserver + the built `dsh-web-frontend` dist; `dsh --profile headless` = [a direct core Agent/Session entry point](2026-08-09-headless-direct-core-entry-point.md), with zero Host, HTTP, or browser layer.
-    - A future Electron application reuses the same web client packages over an IPC fetch carrier.
-
+    - `apps/desktop` (`@deepseek-ai/dsh-desktop`) is the standalone GUI shell: an Electron main process that boots the same `web` profile composition and loads the loopback HTTP origin the webserver serves, exactly like a browser ([standalone GUI architecture note](2026-08-14-desktop-gui-minimum-change-standalone-architecture.md)); an IPC fetch carrier remains a deferred transport decision.
 ```
 apps/*  (applications: apps/web = vite app, apps/cli = bin dispatch)
   │ consume
@@ -75,7 +74,7 @@ Packages under `packages/host/*` and `packages/client/*` **must carry the direct
 
 #### How to integrate a new application (operational checklist)
 
-1. **Pick a fetch impersonation**: browser same-origin HTTP / in-process `host.handler.fetch` injection / your own transport-aspect subclass (e.g. future Electron IPC, see the "Subclass table" below).
+1. **Pick a fetch impersonation**: browser same-origin HTTP / in-process `host.handler.fetch` injection / your own transport-aspect subclass (e.g. a future IPC carrier, see the "Subclass table" below).
 2. **Write an assembly module under `apps/`**: `startHost()` + a client subclass + the application's private signal/print/exit semantics; a mixture never becomes a package — assembly is written in the app.
 3. **Import `dsh-host-webserver` only if you need HTTP carriage**, otherwise zero ports.
 
@@ -218,7 +217,7 @@ All four quadrant full forms pass through `onEnvelope`; the base implementation 
 | `InProcessApiClient` | apiproxy itself | the injected `{ fetch }` handler | **The isomorphic point**: `new InProcessApiClient(toFetchHandler(api))` never touches the network yet runs the real wire serialization/zod/SSE framing; carrier tests and callers can exercise the protocol without opening a port, while product `dsh --profile headless` drives core directly |
 | `WebApiClient` | dsh-client-connection | `globalThis.fetch` uplink + one same-origin WebSocket downlink per logical stream | the browser client; physical boundary in the [WebSocket downlink carrier](2026-08-04-websocket-downlink-carrier.md) |
 | `FixtureApiClient` | dsh-client-connection | unused (protocol-layer override) | serverless UI development (`?fixture`): overrides the `callUnary`/`openMux`/`openHost`/`respond` virtuals and is itself the fake server (frame rpcIds minted by it, semantics self-consistent) |
-| IPC bridge subclass (hypothetical example — no such shell exists) | an Electron shell | IPC serialization round trip | would swap only doFetch; contract and base class unchanged |
+| IPC bridge subclass (hypothetical — deferred; the shipped Electron shell uses the loopback HTTP carrier, so no such subclass exists) | an Electron shell | IPC serialization round trip | would swap only doFetch; contract and base class unchanged |
 
 ## How to extend (operational checklists)
 

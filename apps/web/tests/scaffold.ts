@@ -691,23 +691,35 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
  */
 /**
  * Realize a recorded seed fixture against one scaffold: substitute the
- * `{{sessionId}}`/`{{cwd}}` placeholders and rewrite the recorded cwd to the
- * scaffold's workspace. Idempotent, so a caller may realize early (e.g. to
- * price content exactly as the host will fold it) and still pass the result
- * through {@link seedSession}.
+ * `{{sessionId}}`/`{{cwd}}` placeholders (the cwd spliced in its JSON-escaped
+ * form, so a native Windows backslash path keeps the fixture parseable) and
+ * rewrite the recorded cwd to the scaffold's workspace. Idempotent, so a
+ * caller may realize early (e.g. to price content exactly as the host will
+ * fold it) and still pass the result through {@link seedSession}.
  * @param scaffold - the booted scaffold whose workspace the seed targets.
  * @param fixtureText - the committed seed fixture text.
  * @param id - the session id the seed is realized for.
  * @returns the realized fixture text.
  */
 export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, id: string): string {
+  // The fixture's cwd lives inside JSON strings (the session header and any
+  // recorded output quoting it), so the workspace path must be spliced in its
+  // JSON-escaped form: raw backslashes would parse as invalid escape
+  // sequences. POSIX paths carry no escapes, so the form is identical there.
+  // `{{sessionId}}` is not JSON text and stays raw.
+  const escapedWorkspaceCwd = JSON.stringify(scaffold.workspaceCwd).slice(1, -1)
   const realized = fixtureText
     .split('{{sessionId}}').join(id)
-    .split('{{cwd}}').join(scaffold.workspaceCwd)
-  const fixtureCwd = (JSON.parse(realized.split('\n', 1)[0]!) as { cwd?: string }).cwd
+    .split('{{cwd}}').join(escapedWorkspaceCwd)
+  // Read the recorded cwd without JSON.parse: JSON.parse would decode the
+  // escapes, and the decoded spelling no longer matches the raw text. The
+  // capture keeps the JSON string escapes intact, so `realized` still
+  // contains the captured substring verbatim.
+  const header = realized.split('\n', 1)[0] ?? ''
+  const fixtureCwd = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(header)?.[1]
   return fixtureCwd === undefined
     ? realized
-    : realized.split(fixtureCwd).join(scaffold.workspaceCwd)
+    : realized.split(fixtureCwd).join(escapedWorkspaceCwd)
 }
 
 export async function seedSession(

@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-14-desktop-gui-minimum-change-standalone-architecture.md
-2026-08-14-desktop-gui-minimum-change-standalone-architecture.md: 5a158c90d4e298a0ece2e74df8bff6a05545f292
-2026-08-14-desktop-gui-minimum-change-standalone-architecture.zh.md: 48c7ea6304539d4096766bc00dd341e5fe783ffc
